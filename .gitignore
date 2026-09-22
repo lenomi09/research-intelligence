@@ -67,6 +67,12 @@ data/figures/*
 data/tables/*
 !data/tables/.gitkeep
 
+# Sprint 2 retrieval index (qdrant-client local/embedded mode — see ADR-015).
+# Actual on-disk store lives at data/index/, not the generic qdrant_storage/ path
+# below (kept as a harmless generic safety net in case that path is ever used).
+data/index/*
+!data/index/.gitkeep
+
 # --- Vector DB / local service data ---
 qdrant_storage/
 pgdata/

@@ -16,6 +16,13 @@ not by enumerating every conceivable future task now.
 
 ## Discovery
 
+**Status (2026-09-22, Sprint 2):** DISC-001/DISC-002 done — Sprint 1's per-paper
+metadata plus `LocalCollectionPaperSource` (reads `data/papers/processed/` back via
+`PaperSource`). DISC-003 (arXiv topic search) remains not implemented — P1 and
+explicitly deferred this sprint, see `decisions.md` ADR-013/ADR-015 and
+`implementation-plan.md`'s Sprint 2 status note. DISC-004/DISC-005 unchanged
+(Future/unscheduled).
+
 | ID | Title | Priority | Description | Acceptance criteria | Dependencies |
 |---|---|---|---|---|---|
 | DISC-001 | Manual collection input | P0 | Accept a manually curated set of paper files/references as the collection (FR-020). | A list of local PDF paths/URLs can be provided and is treated as one collection. | None |
@@ -52,6 +59,14 @@ not by enumerating every conceivable future task now.
 | UND-006 | Understanding evaluation | P1 | Manual/automated check of extraction accuracy per field (EXTRACT metrics). | Metrics computed against a small labeled set (see `evaluation.md`). | UND-002–UND-005, EVAL-001 |
 
 ## Retrieval (Supporting Capability)
+
+**Status (2026-09-22, Sprint 2):** RET-001–RET-005 and RET-008 done — `fastembed`
+(BAAI/bge-small-en-v1.5) + `qdrant-client` local mode (see `decisions.md` ADR-015),
+chunking in `src/retrieval/chunking.py`, indexing/query pipelines in
+`src/retrieval/{indexing,retrieval}.py`, evaluation harness in `tests/evaluation/`
+(synthetic corpus, not a real one — see `evaluation.md`). RET-006 (reranking)
+unchanged, still P2/deferred. RET-007 implemented **narrowly**: the retrieved chunk
+text plus its citation *is* the grounded answer — no LLM/paraphrase step this sprint.
 
 | ID | Title | Priority | Description | Acceptance criteria | Dependencies |
 |---|---|---|---|---|---|
@@ -139,8 +154,8 @@ not by enumerating every conceivable future task now.
 | ID | Title | Priority | Description | Acceptance criteria | Dependencies |
 |---|---|---|---|---|---|
 | INF-001 | `DocumentParser` implementation | P0 | Docling or PyMuPDF. | Satisfies `DocumentParser` contract; passes interface test suite. | ING-002 |
-| INF-002 | `EmbeddingProvider` implementation | P0 | BGE or Jina. | Satisfies `EmbeddingProvider` contract. | RET-001 |
-| INF-003 | `VectorStore` implementation | P0 | Qdrant (candidate). | Satisfies `VectorStore` contract. | RET-002 |
+| INF-002 | `EmbeddingProvider` implementation | P0 | `fastembed` (BAAI/bge-small-en-v1.5) — see ADR-015. Done, Sprint 2. | Satisfies `EmbeddingProvider` contract. | RET-001 |
+| INF-003 | `VectorStore` implementation | P0 | `qdrant-client`, embedded/local mode (no server) — see ADR-015. Done, Sprint 2. | Satisfies `VectorStore` contract. | RET-002 |
 | INF-004 | `LLMProvider` implementation | P0 | Hosted API or local LLM. | Satisfies `LLMProvider` contract. | None |
 | INF-005 | `VLMProvider` implementation | P1 | Hosted API or local VLM. | Satisfies `VLMProvider` contract. | MM-001 |
 | INF-006 | `PaperSource` implementation | P1 | arXiv API (candidate). | Satisfies `PaperSource` contract. | DISC-003 |

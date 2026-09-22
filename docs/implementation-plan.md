@@ -64,7 +64,7 @@ deliberately last — see the sequencing ADR in `decisions.md`.
   report for what that means for the Definition of Done above and for
   `README.md`'s instructions on adding real test papers locally.
 
-### Sprint 2 — Paper Discovery and Retrieval
+### Sprint 2 — Paper Discovery and Retrieval — **Implemented** (see status note below)
 
 - **Objective:** Accept a curated paper collection as input and retrieve relevant text
   evidence across it — the supporting capability everything else is built on.
@@ -77,6 +77,19 @@ deliberately last — see the sequencing ADR in `decisions.md`.
   manual review (see `evaluation.md`).
 - **Risks:** Chunking strategy affects retrieval quality significantly; retrieval across
   a multi-paper collection needs paper-scoped filtering, not just a single flat index.
+- **Status note:** implemented with `fastembed` (`BAAI/bge-small-en-v1.5`) for
+  `EmbeddingProvider` and `qdrant-client`'s embedded/local mode (no server/Docker) for
+  `VectorStore` — see `decisions.md` ADR-015 for why, and for the new `Chunk` domain
+  model this sprint added. `PaperSource`'s only implementation is
+  `LocalCollectionPaperSource` (reads back Sprint 1's `data/papers/processed/`
+  output); arXiv topic search (DISC-003) remains deferred, as does reranking
+  (RET-006, P2). No LLM is used — RET-007 is implemented narrowly: the retrieved
+  chunk text itself is the "grounded answer," with its citation attached. Validated
+  end-to-end (`scripts/ingest.py` → `scripts/index.py` → `scripts/search.py`) against
+  two synthetically generated, topically distinct PDFs, confirming both correct
+  cross-paper retrieval and paper-scoped filtering; also validated with a synthetic
+  Recall@K/MRR harness (`tests/evaluation/`). As with Sprint 1, **not** run against a
+  real curated AI/CV/ML corpus (none was available in this environment).
 
 ### Sprint 3 — Structured Paper Understanding
 
@@ -285,3 +298,10 @@ structured scientific paper data for every later Research Intelligence capabilit
   was validated with unit/integration tests against synthetically generated PDFs
   only — see the Sprint 1 final report for what remains before the corpus-level
   Definition of Done items can be checked off with real papers.
+- 2026-09-22: Sprint 2 implemented — `fastembed` (bge-small-en-v1.5) and
+  `qdrant-client` local/embedded mode chosen for `EmbeddingProvider`/`VectorStore`
+  instead of sentence-transformers/a Qdrant server; `Chunk` added as a new domain
+  model (see `decisions.md` ADR-015 for both). `PaperSource`'s arXiv implementation
+  (DISC-003) and reranking (RET-006) remain deferred; no LLM used this sprint. Same
+  real-corpus caveat as Sprint 1 — validated with synthetic PDFs and a synthetic
+  evaluation set, not a real curated collection.

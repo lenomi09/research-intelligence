@@ -56,7 +56,7 @@ in the benchmark dataset (see below). Extraction accuracy is treated as a ceilin
 every downstream capability (Comparison, Landscape, Gap Analysis) — see
 `implementation-plan.md` Sprint 3 risks.
 
-## Retrieval Metrics — **Planned**
+## Retrieval Metrics — **Implemented**
 
 Applies to `src/retrieval` (Sprint 2+), used within Understanding, Comparison, and
 grounded Q&A.
@@ -66,7 +66,14 @@ grounded Q&A.
 - **MRR (Mean Reciprocal Rank)** — average of 1/rank of the first relevant chunk across
   evaluation questions.
 
-Both require a labeled set of (question → relevant chunk(s)/page(s)) pairs.
+Both require a labeled set of (question → relevant chunk(s)/page(s)) pairs. A harness
+computing both exists at `tests/evaluation/test_retrieval_metrics.py`, run against
+`tests/evaluation/retrieval_eval_set.jsonl` — **only a small hand-built synthetic
+corpus (3 papers, 6 questions), not a real curated collection** (none was available
+in this environment, same constraint Sprint 1 operated under). This demonstrates the
+harness works, not validated retrieval quality on real papers — no numbers from that
+run are recorded here per this document's own rule above; see the Sprint 2 session's
+final report for the actual figures produced.
 
 ## Generation / Grounded Analysis Metrics — **Planned**
 

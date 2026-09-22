@@ -514,6 +514,74 @@ not a claim of high extraction accuracy (see `evaluation.md`).
 
 ---
 
+## ADR-015: Sprint 2 Retrieval-Stack Choices (fastembed, qdrant-client local mode, Chunk)
+
+**Status:** Accepted
+
+**Context:** ADR-004 named Qdrant as a "candidate" `VectorStore` implementation, not a
+validated choice, and explicitly said the choice "should be revisited with real data
+once Sprint 2 is underway, and that revisit should be recorded as a new ADR rather
+than silently changed" — this ADR is that revisit. Similarly, `architecture.md` §2.3
+lists "BGE / Jina" as `EmbeddingProvider` candidates without commitment. Sprint 2's
+actual scope (a small, manually curated local collection, per `PRD.md`'s MVP framing)
+makes a full Qdrant server + Docker Compose service disproportionate, and a
+torch-based embedding stack (sentence-transformers) disproportionate to
+`development-guidelines.md`'s "smallest reasonable dependency set" rule — the same
+reasoning ADR-014 used to pick PyMuPDF over Docling in Sprint 1. Separately, while
+implementing retrieval, `TextBlock` (Sprint 1) proved insufficient as the unit to
+embed/store directly: it carries no `paper_id` (only meaningful nested inside a
+`Paper`), and the `VectorStore` payload needs a self-contained evidence unit.
+
+**Decision:**
+1. **VectorStore**: use `qdrant-client`'s embedded/local on-disk mode
+   (`QdrantClient(path=...)`), not a Qdrant server. Confirmed by direct testing that
+   local mode implements the same payload-filtering API (`Filter`/`FieldCondition`/
+   `MatchAny`) as server mode — the same underlying engine, exposed identically — so
+   RET-002's paper-scoped-filtering requirement is met without any operational
+   service. Data lives under `data/index/` (gitignored, mirroring
+   `data/papers/processed/`'s pattern).
+2. **EmbeddingProvider**: use `fastembed` with `BAAI/bge-small-en-v1.5` — an
+   ONNX-runtime-based library with no torch/sentence-transformers dependency tree
+   (confirmed: `pip install fastembed qdrant-client` pulled in `onnxruntime`, not
+   `torch` or `transformers`), a small model (~130MB), CPU-friendly.
+3. **`Chunk`** added as a new domain model (`src/domain/models/chunk.py`), parallel
+   to how ADR-014 added `Section` mid-Sprint-1: a retrievable-evidence-unit concept
+   needed by the `VectorStore` interface's payload shape (`chunk_id`, `paper_id`,
+   `page`, `text`, `source_block_id` tracing back to the originating `TextBlock` for
+   evidence traceability, ADR-009) and reused unmodified by Sprint 3's Understanding,
+   not an implementation detail of one infrastructure provider.
+
+**Alternatives considered:**
+- A full Qdrant server via `docker-compose.yml` (already scaffolded with a
+  placeholder per DEVOPS-003) — deferred; adds an operational dependency (a running
+  service) this sprint's scope doesn't need, and local mode's API is close enough to
+  server mode that migrating later is a configuration change, not a rewrite.
+- pgvector — deferred per ADR-004's original reasoning, unchanged; remains a live
+  alternative if `data/index/`'s local-mode footprint or PostgreSQL consolidation
+  becomes a priority later.
+- sentence-transformers/torch-based embeddings — rejected for the same
+  dependency-footprint reason ADR-014 rejected Docling.
+- Operating directly on `TextBlock` without a `Chunk` model — rejected because
+  `TextBlock` lacks `paper_id`, and folding chunking-splitting concerns into a
+  Sprint-1 model would blur its meaning for a Sprint-2-specific need.
+- Qdrant point ids as raw `chunk_id` strings — rejected; Qdrant requires int/UUID
+  ids. Resolved via a deterministic `uuid.uuid5(chunk_id)` as the point id, with the
+  human-readable `chunk_id` kept in the payload and returned from `query()` — so
+  callers never see an opaque UUID.
+
+**Consequences:** `pyproject.toml` gains `fastembed` and `qdrant-client`; still zero
+LLM/VLM dependencies (Sprint 3 concern, per RET-007's narrow no-generation
+interpretation this sprint — see `implementation-plan.md`'s Sprint 2 status note).
+`docker-compose.yml`'s vector-DB placeholder stays unfilled this sprint (no server to
+run) — DEVOPS-003 remains open/future. Re-embedding an existing collection with a
+different model requires clearing `data/index/` — `QdrantLocalVectorStore` raises
+`VectorStoreError` on a dimension mismatch rather than silently creating an
+incompatible collection or corrupting the existing one. If corpus size or concurrent-
+query load later justify a server, that is a new ADR, not a silent change (mirroring
+ADR-004's own instruction to itself).
+
+---
+
 ## Template for Future ADRs
 
 ```

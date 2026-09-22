@@ -42,20 +42,28 @@ limitations recur, and where the literature is thin.
 
 ## Current Status
 
-**Sprint 1 (Scientific Paper Ingestion) is implemented.** The full documentation set
-below was written in Phase 0; Sprint 1 (defined in
-[docs/implementation-plan.md](docs/implementation-plan.md)) has since built a PDF
-ingestion pipeline — metadata, text, tables, figures, references, and page-level
-evidence, for one PDF at a time, persisted as structured JSON (see "Ingestion Output
-Layout" below). No retrieval, structured understanding, comparison, landscape, gap
-analysis, or agent logic exists yet — see
-[docs/decisions.md](docs/decisions.md) ADR-014 for what changed from the original
-Sprint 1 plan (parser choice, a small domain-model addition) and why.
+**Sprints 1 and 2 (Ingestion; Discovery and Retrieval) are implemented.** The full
+documentation set below was written in Phase 0. Sprint 1 (defined in
+[docs/implementation-plan.md](docs/implementation-plan.md)) built a PDF ingestion
+pipeline — metadata, text, tables, figures, references, and page-level evidence, for
+one PDF at a time, persisted as structured JSON (see "Ingestion Output Layout"
+below). Sprint 2 built on that: a local `PaperSource` that reads ingested papers
+back, chunking, embedding (`fastembed`), a local vector index (`qdrant-client`
+embedded mode), and a retrieval pipeline that returns ranked, cited evidence for a
+question, with paper-scoped filtering (see "Retrieval Output Layout" below). See
+[docs/decisions.md](docs/decisions.md) ADR-014/ADR-015 for what changed from the
+original plan (parser choice, embedding/vector-store choices, small domain-model
+additions) and why.
 
-The pipeline has been validated with unit and integration tests (using PDFs generated
-on the fly with PyMuPDF, not committed fixtures) but **not yet run against a real
-curated AI/CV/ML paper collection** — see "Local Development" below for how to try it
-against your own PDFs.
+No structured understanding, comparison, landscape, gap analysis, or agent logic
+exists yet, and no LLM is used anywhere — retrieval returns the evidence chunk
+itself as the "answer," not an LLM-generated one (a deliberate Sprint 2 scoping
+decision, see `implementation-plan.md`'s Sprint 2 status note).
+
+Both pipelines have been validated with unit and integration tests (using PDFs
+generated on the fly with PyMuPDF, not committed fixtures, and a synthetic retrieval
+evaluation set) but **not yet run against a real curated AI/CV/ML paper collection**
+— see "Local Development" below for how to try it against your own PDFs.
 
 ## Documentation
 
@@ -105,12 +113,12 @@ so each can be replaced without touching domain/application logic (see
 
 - **Language/API:** Python, FastAPI
 - **Agent orchestration:** LangGraph (future, optional — after deterministic pipelines exist)
-- **Parsing:** Docling (candidate), PyMuPDF (fallback candidate)
-- **Embeddings / reranking:** BGE or Jina
-- **Vector database:** Qdrant (candidate), pgvector (alternative)
-- **Relational/structured storage:** PostgreSQL
-- **LLM / VLM:** hosted API and/or local model, provider-agnostic via interfaces
-- **Paper source (future):** arXiv API (candidate)
+- **Parsing:** PyMuPDF (chosen, Sprint 1 — see ADR-014), Docling (alternative)
+- **Embeddings:** `fastembed` / BAAI/bge-small-en-v1.5 (chosen, Sprint 2 — see ADR-015), Jina (alternative); reranking still a future candidate (RET-006)
+- **Vector database:** `qdrant-client`, embedded/local mode (chosen, Sprint 2 — see ADR-015), a networked Qdrant server or pgvector (alternatives)
+- **Relational/structured storage:** PostgreSQL (still a future candidate — not needed yet)
+- **LLM / VLM:** hosted API and/or local model, provider-agnostic via interfaces (not used yet — Sprint 3+)
+- **Paper source (future):** arXiv API (candidate; local `PaperSource` chosen for Sprint 2)
 - **Frontend (post-MVP):** React + Tailwind
 - **Local dev orchestration:** Docker Compose
 
@@ -121,9 +129,9 @@ See [docs/implementation-plan.md](docs/implementation-plan.md) for full detail.
 | Sprint | Focus |
 |---|---|
 | Phase 0 | Planning (this stage) |
-| Sprint 1 | Scientific paper ingestion (text/tables/figures/references/metadata) — **current target** |
-| Sprint 2 | Paper discovery (curated collection input) and retrieval |
-| Sprint 3 | Structured paper understanding (problem/method/dataset/metric/result/limitation) — completes the MVP |
+| Sprint 1 | Scientific paper ingestion (text/tables/figures/references/metadata) — done |
+| Sprint 2 | Paper discovery (curated collection input) and retrieval — done |
+| Sprint 3 | Structured paper understanding (problem/method/dataset/metric/result/limitation) — completes the MVP — **current target** |
 | Sprint 4 | Research landscape and clustering |
 | Sprint 5 | Multi-paper comparison |
 | Sprint 6 | Evidence-based research gap analysis |
@@ -138,67 +146,86 @@ research-intelligence-platform/
 ├── docs/                    # Planning and technical documentation
 ├── src/
 │   ├── domain/
-│   │   ├── models/          # Paper, Author, Page, TextBlock, Section, Figure, Table, Citation (implemented)
+│   │   ├── models/          # Paper, Author, Page, TextBlock, Section, Figure, Table, Citation, Chunk (implemented)
 │   │   ├── schemas/         # Shared validation/serialization schemas (not yet needed — see below)
-│   │   └── interfaces/      # DocumentParser (implemented); LLM/VLM/Embedding/VectorStore/PaperSource (future)
-│   ├── ingestion/           # Ingestion orchestration: pipeline, assets, validation, persistence, report (implemented)
+│   │   └── interfaces/      # DocumentParser, EmbeddingProvider, VectorStore, PaperSource (implemented); LLM/VLM (future)
+│   ├── ingestion/           # Ingestion orchestration: pipeline, assets, validation, persistence (read+write), report
+│   ├── discovery/           # PaperSource capability boundary (interface-only; see infrastructure/paper_sources)
+│   ├── retrieval/           # chunking.py, indexing.py (write path), retrieval.py (read path) — implemented
 │   ├── infrastructure/
-│   │   └── parsers/         # PyMuPDFDocumentParser + parsing heuristics (implemented)
-│   ├── retrieval/           # Chunking, embedding, similarity search (supporting capability, Sprint 2+)
+│   │   ├── parsers/          # PyMuPDFDocumentParser + parsing heuristics (implemented)
+│   │   ├── embeddings/        # FastEmbedProvider (implemented)
+│   │   ├── vector_stores/      # QdrantLocalVectorStore (implemented)
+│   │   └── paper_sources/       # LocalCollectionPaperSource (implemented)
 │   ├── multimodal/          # Figure/table understanding orchestration (supporting capability, Sprint 8)
 │   ├── agent/                # (future) research workflow orchestration
 │   ├── tools/                 # (future) agent-invocable capabilities
 │   └── api/                   # FastAPI application (future)
-│   # discovery/, understanding/, landscape/, comparison/, gap_analysis/, graph/
-│   # are documented in architecture.md and created when their sprint begins —
-│   # not scaffolded ahead of need.
+│   # understanding/, landscape/, comparison/, gap_analysis/, graph/ are documented
+│   # in architecture.md and created when their sprint begins — not scaffolded
+│   # ahead of need.
 ├── tests/
-│   ├── unit/                # Domain models, heuristics, pipeline orchestration (fake parser)
-│   ├── integration/         # Real PyMuPDFDocumentParser + real pipeline against generated PDFs
-│   └── evaluation/          # (future — Sprint 6+)
+│   ├── unit/                # Domain models, heuristics, pipeline orchestration (fakes only, no real I/O)
+│   ├── integration/         # Real parser/embedder/vector-store against generated PDFs
+│   └── evaluation/          # Retrieval Recall@K/MRR harness against a synthetic eval set
 ├── data/
 │   ├── papers/
 │   │   ├── raw/              # Local input PDFs you place here (gitignored)
 │   │   └── processed/         # Ingestion output (gitignored — see "Ingestion Output Layout")
-│   ├── figures/                # (unused by Sprint 1; figures live under papers/processed/<id>/figures/)
-│   └── tables/                 # (unused by Sprint 1; tables live under papers/processed/<id>/tables/)
+│   ├── index/                  # Local vector index (gitignored — see "Retrieval Output Layout")
+│   ├── figures/                # (unused; figures live under papers/processed/<id>/figures/)
+│   └── tables/                 # (unused; tables live under papers/processed/<id>/tables/)
 ├── scripts/
-│   └── ingest.py                # Sprint 1 CLI entry point
+│   ├── ingest.py                # Sprint 1 CLI entry point
+│   ├── index.py                  # Sprint 2 CLI: build the local retrieval index
+│   └── search.py                  # Sprint 2 CLI: query the index
 ├── config/                       # Configuration files (not yet needed — no config exists yet)
 ├── pyproject.toml
 ├── docker-compose.yml
 └── .gitignore
 ```
 
-`src/domain/schemas` and `config/` remain empty (`.gitkeep` only) — Sprint 1 didn't
-need them (see [docs/development-guidelines.md](docs/development-guidelines.md), "do
-not over-engineer"). `retrieval/`, `multimodal/`, `agent/`, `tools/`, and `api/` are
-scaffolded but still empty, reserved for their documented future sprints.
+`src/domain/schemas` and `config/` remain empty (`.gitkeep` only) — nothing has
+needed them yet (see [docs/development-guidelines.md](docs/development-guidelines.md),
+"do not over-engineer"). `multimodal/`, `agent/`, `tools/`, and `api/` are scaffolded
+but still empty, reserved for their documented future sprints.
 
 ## Local Development
 
-Sprint 1's ingestion pipeline is runnable locally. No API keys or `.env` file are
-needed yet — nothing in Sprint 1 calls an external service.
+Both pipelines are runnable locally. No API keys or `.env` file are needed — nothing
+here calls a paid service. `scripts/index.py`/`scripts/search.py` do need network
+access on their *first* run only, to download the `fastembed` model (~130MB,
+cached afterward under the OS's standard cache directory).
 
 ```bash
 python -m venv .venv
 .venv/Scripts/activate       # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
 
-# Run the test suite (uses synthetically generated PDFs, no real papers needed):
+# Run the unit test suite (fakes only, no network, no real papers/models needed):
+pytest -m "not integration"
+
+# Run everything, including real fastembed/qdrant-client integration tests and the
+# evaluation harness (downloads the embedding model on first run):
 pytest
 
-# Ingest your own PDFs:
+# Ingest, then index, then search your own PDFs:
 #   1. Place a few open-access PDFs (e.g. from arXiv — respect each paper's license/
 #      terms) into data/papers/raw/ (gitignored, nothing there is committed).
-#   2. Run:
 python scripts/ingest.py
-#   Output is written to data/papers/processed/<paper_id>/ (also gitignored — see
-#   "Ingestion Output Layout" below) and a per-run summary prints to the console.
+#      Output: data/papers/processed/<paper_id>/ (gitignored — see "Ingestion Output
+#      Layout" below).
+python scripts/index.py
+#      Output: data/index/ (gitignored — see "Retrieval Output Layout" below).
+python scripts/search.py "What dataset was used for evaluation?"
+#      Prints ranked evidence chunks with paper + page citations. Add --paper
+#      <paper_id> (repeatable) to restrict the search to specific papers.
 ```
 
-`docker-compose.yml` currently documents planned local services (Qdrant, PostgreSQL)
-as comments; it will be filled in when those services are actually needed (Sprint 2).
+`docker-compose.yml` currently documents planned local services (a networked Qdrant,
+PostgreSQL) as comments — Sprint 2 deliberately did not need them (see
+[docs/decisions.md](docs/decisions.md) ADR-015, embedded/local `qdrant-client`
+instead); it will be filled in only if a real service becomes necessary later.
 
 ## Ingestion Output Layout
 
@@ -227,6 +254,22 @@ data/papers/processed/<paper_id>/
 Neither `data/papers/raw/` nor `data/papers/processed/` are committed — raw papers may
 be copyrighted, and processed output includes extracted paper text, which is a
 redistribution of that same content in another form (see `.gitignore`).
+
+## Retrieval Output Layout
+
+Running `scripts/index.py` writes a local, embedded (no server) `qdrant-client`
+store under `data/index/` — see [docs/decisions.md](docs/decisions.md) ADR-015 for
+why this is `qdrant-client`'s local mode rather than a networked Qdrant server. It
+is not a set of individually meaningful files the way ingestion's output is (it's
+Qdrant's own on-disk format), so there's no per-file breakdown here — just know that
+each indexed chunk's payload carries `chunk_id`, `paper_id`, `page`, and `text`, which
+is exactly what `scripts/search.py` prints back as a citation.
+
+`data/index/` is not committed (same reasoning as `data/papers/processed/` — it's
+derived from extracted paper text). If you change the embedding model, delete
+`data/index/` and re-run `scripts/index.py`: `QdrantLocalVectorStore` refuses to open
+an existing collection built with a different vector dimension rather than silently
+producing wrong results.
 
 ## Contributing
 

@@ -7,13 +7,16 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Project maintainer" }]
 
-# Sprint 1 (Scientific Paper Ingestion) dependencies only — see
-# docs/decisions.md ADR-014 for why each was chosen and docs/development-guidelines.md
-# ("add a dependency only when it's needed") for the policy behind keeping this list
-# minimal. No RAG/embedding/vector-store/LLM/VLM dependencies belong here yet.
+# Sprint 1 (ingestion) + Sprint 2 (discovery/retrieval) dependencies — see
+# docs/decisions.md ADR-014/ADR-015 for why each was chosen and
+# docs/development-guidelines.md ("add a dependency only when it's needed") for the
+# policy behind keeping this list minimal. Embedding/vector-store deps now belong
+# here (Sprint 2); no LLM/VLM dependencies belong here yet (Sprint 3+).
 dependencies = [
     "pymupdf>=1.24",
     "pydantic>=2",
+    "fastembed>=0.4",
+    "qdrant-client>=1.11",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +36,9 @@ packages = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "integration: requires network on first run to fetch the fastembed model",
+]
 
 [tool.ruff]
 line-length = 95

@@ -1,0 +1,6 @@
+{"id": "q-001", "question": "What mechanism do transformers use for language processing?", "expected_paper_id": "paper_nlp", "expected_page": 1}
+{"id": "q-002", "question": "What dataset was used to evaluate the translation model?", "expected_paper_id": "paper_nlp", "expected_page": 2}
+{"id": "q-003", "question": "What are convolutional neural networks used for?", "expected_paper_id": "paper_cv", "expected_page": 1}
+{"id": "q-004", "question": "What dataset was used for object detection evaluation?", "expected_paper_id": "paper_cv", "expected_page": 2}
+{"id": "q-005", "question": "How do reinforcement learning agents learn optimal behavior?", "expected_paper_id": "paper_rl", "expected_page": 1}
+{"id": "q-006", "question": "What algorithm was used to train the robot control policy?", "expected_paper_id": "paper_rl", "expected_page": 2}

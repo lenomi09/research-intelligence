@@ -123,10 +123,10 @@ see the table below.
 | Domain models | `src/domain/models` | Core entities: Paper, Author, ResearchTopic, Method, Dataset, Metric, Experiment, Figure, Table, Citation, ResearchClaim, ResearchGapHypothesis (see §7). | — |
 | Domain schemas | `src/domain/schemas` | Shared validation/serialization schemas used across layers, independent of API-specific request/response shape. | — |
 | Domain interfaces | `src/domain/interfaces` | Abstract contracts: `LLMProvider`, `VLMProvider`, `EmbeddingProvider`, `VectorStore`, `DocumentParser`, `PaperSource`. No implementation. | — |
-| Discovery | `src/discovery` *(created when Sprint 2 needs it)* | Collects/curates the paper collection; in the MVP, accepts a manually assembled set (FR-020); later, searches external sources, ranks, dedups, filters. | `PaperSource` |
-| Ingestion | `src/ingestion` | Orchestrates parsing a PDF into domain models (text/tables/figures/references/pages) and persisting/indexing them. | `DocumentParser`, `EmbeddingProvider`, `VectorStore` |
+| Discovery | `src/discovery` | Collects/curates the paper collection; MVP scope: reads back an already-ingested manual/local collection (FR-020) via `LocalCollectionPaperSource`; later, searches external sources, ranks, dedups, filters. | `PaperSource` |
+| Ingestion | `src/ingestion` | Orchestrates parsing a PDF into domain models (text/tables/figures/references/pages) and persisting them; also the read side (`load_paper`) Discovery uses to hydrate a persisted paper back. Does not itself chunk/embed/index — see Retrieval. | `DocumentParser` |
 | Understanding | `src/understanding` *(created when Sprint 3 needs it)* | Extracts structured fields per paper (problem, method, dataset, metrics, results, limitations), each retaining an evidence pointer. | `LLMProvider`, `VectorStore` |
-| Retrieval | `src/retrieval` | Query embedding, similarity search, (future) reranking, assembling retrieved evidence — a supporting capability used by Understanding, Comparison, and grounded Q&A. | `EmbeddingProvider`, `VectorStore` |
+| Retrieval | `src/retrieval` | Chunking, embedding, and indexing (`indexing.py`, the write path) plus query embedding/similarity search/(future) reranking (`retrieval.py`, the read path) — a supporting capability used by Understanding, Comparison, and grounded Q&A. | `EmbeddingProvider`, `VectorStore` |
 | Landscape | `src/landscape` *(created when Sprint 4 needs it)* | Clusters papers by theme/direction; surfaces method–dataset relationships across the collection. | (via Understanding output) |
 | Comparison | `src/comparison` *(created when Sprint 5 needs it)* | Compares 2+ papers across structured fields (from Understanding), preserving evidence traceability per compared field. | `LLMProvider` |
 | Gap analysis | `src/gap_analysis` *(created when Sprint 6 needs it)* | Identifies candidate underexplored combinations/recurring limitations from Landscape/Understanding output; always emits hypotheses with supporting evidence, never bare claims. | (via Landscape/Understanding output) |
@@ -145,6 +145,12 @@ of need (see `development-guidelines.md`, "do not over-engineer").
 
 ### 4.1 Ingestion Pipeline (Sprint 1)
 
+Ends at persisted structured output — chunking/embedding/indexing is Retrieval's job
+(§4.2), reading that output back rather than running inline during ingestion (see
+ADR-015): this keeps a paper's parse from having to be redone every time the
+embedding model changes, and keeps `DocumentParser`'s dependency graph free of
+`EmbeddingProvider`/`VectorStore`.
+
 ```mermaid
 flowchart LR
     A[PDF collection] --> B[DocumentParser\n(interface)]
@@ -153,9 +159,6 @@ flowchart LR
     C --> E[Tables]
     C --> F[Figures + captions]
     C --> R[References / citations]
-    D --> G[Chunking]
-    G --> H[EmbeddingProvider\n(interface)]
-    H --> I[VectorStore\n(interface)]
     E --> J[(Structured store:\ntable data)]
     F --> K[(File storage:\nfigure images)]
     D --> L[(Structured store:\npage/text metadata)]
@@ -164,11 +167,23 @@ flowchart LR
 
 ### 4.2 Retrieval Pipeline (Sprint 2, supporting capability)
 
+Two flows: indexing (write path, `src/retrieval/indexing.py`) reads Sprint 1's
+persisted papers back via `PaperSource` and populates the vector store; query (read
+path, `src/retrieval/retrieval.py`) is the one architecture.md originally sketched.
+
 ```mermaid
 flowchart LR
-    Q[Question / extraction target] --> QE[EmbeddingProvider:\nembed query]
-    QE --> VS[VectorStore:\nsimilarity search]
-    VS --> R[Top-K text chunks\n+ provenance]
+    P[(Persisted papers,\n§4.1 output)] --> PS[PaperSource:\nlist_papers]
+    PS --> CH[Chunking\n(pure function)]
+    CH --> EMB[EmbeddingProvider:\nembed_documents]
+    EMB --> UP[VectorStore:\nupsert]
+```
+
+```mermaid
+flowchart LR
+    Q[Question / extraction target] --> QE[EmbeddingProvider:\nembed_query]
+    QE --> VS[VectorStore:\nquery\n(paper-scoped filter optional)]
+    VS --> R[Top-K chunks\n+ provenance]
     R --> CONS[Understanding / Comparison /\ngrounded answer assembly]
 ```
 
@@ -241,10 +256,11 @@ Three distinct storage concerns, kept separate so each can be swapped independen
 
 The following entities and relationships are the target domain model. They are
 documented here to guide `src/domain/models` design in later sprints; **only entities
-needed by the current sprint are implemented** (Sprint 1: Paper, Page, TextBlock, Table,
-Figure, Citation — see `implementation-plan.md`). Split into two diagrams below —
-what a paper *contains* (Sprint 1) vs. what gets *extracted from* it (Sprint 3+) —
-since mixing both in one diagram is what made it hard to read.
+needed by the current sprint are implemented** (Sprint 1: Paper, Page, TextBlock,
+Table, Figure, Citation; Sprint 2 adds Chunk — see `implementation-plan.md`). Split
+into three parts below — what a paper *contains* (§7.1, Sprint 1), the retrievable
+units derived from it (§7.2, Sprint 2), and what gets *interpreted* from it (§7.3,
+Sprint 3+) — since mixing these in one diagram is what made it hard to read.
 
 ### 7.1 Paper Content (Sprint 1 — Ingestion)
 
@@ -273,7 +289,22 @@ erDiagram
 | `Table` | An extracted table with page provenance. |
 | `Citation` | A reference from one paper to another (or to external work) — the edge label `cites` above; modeled as its own entity once graph queries need edge metadata (Sprint 7). |
 
-### 7.2 Research Knowledge (Sprint 3+ — Understanding, Landscape, Gap Analysis)
+### 7.2 Retrieval Units (Sprint 2 — Retrieval)
+
+Neither raw-parsed (§7.1) nor LLM-interpreted (§7.3): a `Chunk` is a deterministic
+transformation of `TextBlock` (chunking, see ADR-015) — the unit actually embedded
+and stored for similarity search.
+
+```mermaid
+erDiagram
+    Paper ||--o{ Chunk : chunked_into
+```
+
+| Entity | Description |
+|---|---|
+| `Chunk` | A retrievable unit of evidence (paper_id + page + text), close to 1:1 with a `TextBlock`; `source_block_id` traces it back to its origin (NFR-011). |
+
+### 7.3 Research Knowledge (Sprint 3+ — Understanding, Landscape, Gap Analysis)
 
 What's *interpreted* from a paper's content — every entity here traces back to a
 `Paper` and, per NFR-011, ultimately to specific evidence within it:

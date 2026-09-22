@@ -120,6 +120,58 @@ def multi_page_references_pdf(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def two_topically_distinct_pdfs(tmp_path: Path) -> list[Path]:
+    """Two synthetic papers on unrelated topics, for retrieval tests that need to
+    confirm a question retrieves evidence from the *correct* paper, not just *a*
+    paper (see tests/integration/test_indexing_and_retrieval_end_to_end.py)."""
+    translation_doc = pymupdf.open()
+    p1 = translation_doc.new_page()
+    p1.insert_text((72, 72), "Transformers for Machine Translation", fontsize=18)
+    p1.insert_text((72, 100), "Jane Doe", fontsize=11)
+    p1.insert_text((72, 140), "1. Introduction", fontsize=13)
+    p1.insert_text(
+        (72, 160),
+        "We propose a transformer architecture using self-attention for translation.",
+        fontsize=10,
+    )
+    p2 = translation_doc.new_page()
+    p2.insert_text((72, 72), "2. Experiments", fontsize=13)
+    p2.insert_text(
+        (72, 90),
+        "We evaluate our model on the WMT14 English-German dataset and report BLEU scores.",
+        fontsize=10,
+    )
+    translation_doc.set_metadata({"title": "Transformers for Machine Translation"})
+    translation_path = tmp_path / "paper_transformers.pdf"
+    translation_doc.save(translation_path)
+    translation_doc.close()
+
+    robotics_doc = pymupdf.open()
+    q1 = robotics_doc.new_page()
+    q1.insert_text((72, 72), "Deep Reinforcement Learning for Robotics", fontsize=18)
+    q1.insert_text((72, 100), "John Smith", fontsize=11)
+    q1.insert_text((72, 140), "1. Introduction", fontsize=13)
+    q1.insert_text(
+        (72, 160),
+        "This paper applies deep reinforcement learning to robotic arm manipulation.",
+        fontsize=10,
+    )
+    q2 = robotics_doc.new_page()
+    q2.insert_text((72, 72), "2. Experiments", fontsize=13)
+    q2.insert_text(
+        (72, 90),
+        "Our reward function is based on distance to target and we train using PPO.",
+        fontsize=10,
+    )
+    robotics_doc.set_metadata({"title": "Deep Reinforcement Learning for Robotics"})
+    robotics_path = tmp_path / "paper_rl_robotics.pdf"
+    robotics_doc.save(robotics_path)
+    robotics_doc.close()
+
+    return [translation_path, robotics_path]
+
+
+@pytest.fixture
 def blank_text_pdf(tmp_path: Path) -> Path:
     """A PDF with pages but zero extractable text anywhere (simulates a scanned,
     image-only document) — this must be a required-stage failure."""

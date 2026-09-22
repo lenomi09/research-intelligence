@@ -1,0 +1,44 @@
+# Local development environment — Phase 0 skeleton.
+#
+# This file is a placeholder that documents the intended local services
+# (see docs/architecture.md "Storage Layer"). Services are commented out
+# until the corresponding implementation phase actually needs them, per
+# docs/development-guidelines.md ("do not install/provision ahead of need").
+#
+# Planned services (to be uncommented/filled in as each phase requires them):
+#   - app        : the FastAPI application (Phase 7 productionization, or earlier
+#                   if a minimal API is needed sooner)
+#   - qdrant      : vector database (Phase 2 — text RAG), candidate per ADR-004
+#   - postgres    : relational metadata store (Phase 1/2), candidate per architecture.md
+#
+# services:
+#   qdrant:
+#     image: qdrant/qdrant:latest
+#     ports:
+#       - "6333:6333"
+#     volumes:
+#       - qdrant_storage:/qdrant/storage
+#
+#   postgres:
+#     image: postgres:16
+#     environment:
+#       POSTGRES_USER: ${POSTGRES_USER:-postgres}
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+#       POSTGRES_DB: ${POSTGRES_DB:-research_agent}
+#     ports:
+#       - "5432:5432"
+#     volumes:
+#       - pgdata:/var/lib/postgresql/data
+#
+#   app:
+#     build: .
+#     env_file: .env
+#     ports:
+#       - "8000:8000"
+#     depends_on:
+#       - qdrant
+#       - postgres
+#
+# volumes:
+#   qdrant_storage:
+#   pgdata:

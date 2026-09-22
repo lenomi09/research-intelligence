@@ -12,14 +12,25 @@ into structured, evidence-backed research intelligence (per-paper structured
 knowledge, multi-paper comparison, research landscape, gap hypotheses), not a
 single-document "chat with PDF" tool. Full product context: `docs/PRD.md`.
 
-**Current state:** Sprints 1 and 2 are implemented. Sprint 1 (Scientific Paper
+**Current state:** Sprints 1–3 are implemented. Sprint 1 (Scientific Paper
 Ingestion): PDF → text blocks, sections, figures, tables, citations, page metadata →
 persisted JSON (`scripts/ingest.py`). Sprint 2 (Discovery and Retrieval): reads that
 persisted output back (`src/discovery`, `LocalCollectionPaperSource`), chunks and
 embeds it (`fastembed`), indexes it in a local vector store (`qdrant-client`
 embedded mode), and answers a question with ranked, cited evidence chunks —
-no LLM involved (`scripts/index.py`, `scripts/search.py`; see ADR-015). Nothing past
-retrieval exists yet — see `docs/implementation-plan.md` for the roadmap and
+no LLM involved (`scripts/index.py`, `scripts/search.py`; see ADR-015). Sprint 3
+(Structured Paper Understanding): for each paper, retrieves and labels evidence per
+FR-030–035 field (`src/understanding/prompting.py`'s `collect_labeled_evidence`),
+makes one `LLMProvider.complete()` call to extract research problem/methodology/
+dataset/metric/result/limitation, resolves cited evidence labels back to real
+chunks (never trusts a page number the LLM reports itself), and persists
+`understanding.json` per paper (`scripts/understand.py`; see ADR-016). This is the
+first sprint using an LLM — `OpenAICompatibleLLMProvider` (`httpx`-based,
+provider-neutral) is the only implementation; **no LLM API key or local Ollama
+instance was available in this environment**, so Sprint 3 is validated with mocked
+HTTP and a fake deterministic `LLMProvider`, not a real endpoint (a real-endpoint
+smoke test exists at `pytest -m llm`, skipped by default). Nothing past
+Understanding exists yet — see `docs/implementation-plan.md` for the roadmap and
 `docs/product-backlog.md` for itemized scope.
 
 ## 2. Architectural Principles (non-negotiable)
@@ -64,11 +75,16 @@ from code alone when a doc exists.
 
 Runtime deps are added **only when a sprint needs them** — see `pyproject.toml` for
 what's actually installed (currently: `pymupdf`, `pydantic`, `fastembed`,
-`qdrant-client`; dev: `pytest`, `ruff`). Do not add LLM/VLM libraries until the
-sprint that needs them (Sprint 3+, see `docs/implementation-plan.md`). Candidate
-technologies not yet chosen are listed in `docs/architecture.md` §8 — "candidate"
-means not yet chosen, not "assumed"; ADR-014/ADR-015 record what was actually picked
-and why.
+`qdrant-client`, `httpx`; dev: `pytest`, `ruff`). An LLM is now in use (Sprint 3),
+but only behind `LLMProvider` via `httpx` — no vendor LLM SDK (`openai`,
+`anthropic`) is a dependency, and none should become one without a new ADR. Do not
+add VLM libraries until the sprint that needs them (Sprint 8+, see
+`docs/implementation-plan.md`). No LLM API key or local Ollama instance was
+available when Sprint 3 was built in this environment — don't assume one exists
+without checking; see `README.md`'s "Running Sprint 3" for how a user provides one.
+Candidate technologies not yet chosen are listed in `docs/architecture.md` §8 —
+"candidate" means not yet chosen, not "assumed"; ADR-014/ADR-015/ADR-016 record what
+was actually picked and why.
 
 ## 5. Source Organization
 
@@ -83,10 +99,10 @@ scripts/                                 # composition roots (CLI entry points) 
                                           # capability module
 ```
 
-`discovery/` and `retrieval/` exist (Sprint 2). Capability directories for later
-sprints (`understanding/`, `landscape/`, `comparison/`, `gap_analysis/`, `graph/`)
-are documented in `docs/architecture.md` §3 but **do not exist yet** — create one
-only when its sprint starts, not ahead of need.
+`discovery/`, `retrieval/`, and `understanding/` exist (Sprints 2–3). Capability
+directories for later sprints (`landscape/`, `comparison/`, `gap_analysis/`,
+`graph/`) are documented in `docs/architecture.md` §3 but **do not exist yet** —
+create one only when its sprint starts, not ahead of need.
 
 ## 6. Domain / Infrastructure Boundary
 

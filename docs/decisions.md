@@ -582,6 +582,146 @@ ADR-004's own instruction to itself).
 
 ---
 
+## ADR-016: Sprint 3 Understanding Choices (LLMProvider shape, OpenAICompatibleLLMProvider, EvidencedStatement)
+
+**Status:** Accepted
+
+**Context:** Sprint 3 needed to decide, before writing any code: (1) whether
+FR-030–FR-035 extraction (research problem, methodology, dataset, metric, result,
+limitation) genuinely requires an LLM at all, versus a deterministic/rule-based
+approach consistent with ADR-006/ADR-012's preference for deterministic pipelines;
+(2) if an LLM is justified, what shape `LLMProvider` should take and which concrete
+implementation to build, per `architecture.md` §8/INF-004 ("pick one this sprint");
+and (3) where `research_problem`/`limitations` belong in the domain model, since
+`architecture.md` §7.3's Research Knowledge ER diagram names `Method`/`Dataset`/
+`Metric`/`Experiment` but has no entity for a free-text problem statement or
+limitation. Separately: this development environment has no LLM API key configured
+and no local Ollama instance running (confirmed directly — `env | grep -iE
+"openai|anthropic|ollama"` found nothing, `curl localhost:11434/api/tags` failed to
+connect) — a real end-to-end LLM call could not be validated in this session.
+
+**Decision:**
+1. **LLM vs. deterministic vs. hybrid**: use an LLM for the extraction itself, but
+   confine "deterministic" to everything around it. A rule-based approach (regex/
+   keyword matching for "we propose," "we evaluate on," etc.) was rejected as the
+   primary mechanism: research problems, methods, and limitations are stated in
+   arbitrarily varied natural language across papers, and a keyword/pattern approach
+   would have poor recall and no path to improving it without an ever-growing,
+   brittle rule set — this is exactly the kind of open-ended natural-language
+   understanding task LLMs are suited for and rule-based extraction is not. Pure
+   deterministic extraction was not pursued further once this became clear; a
+   from-scratch hybrid (rules first, LLM fallback) was also rejected as unwarranted
+   complexity for an MVP with no evidence yet that rules alone are useful for any of
+   FR-030–035. What *is* kept deterministic (ADR-006/ADR-012 still apply): evidence
+   retrieval (`collect_labeled_evidence`, reusing Sprint 2's `RetrievalPipeline`
+   unmodified), prompt construction, response parsing, evidence-label resolution,
+   and orchestration/error-isolation — the LLM's only job is producing the request's
+   JSON-with-citations envelope. This keeps reproducibility, testability, and
+   evidence traceability anchored in code, not in the LLM's behavior. Concretely:
+   accuracy favors the LLM (natural-language recall); reproducibility/testability
+   favor the deterministic scaffolding (every non-LLM-call function is a pure
+   function, unit-tested against fixed input, independent of any specific LLM's
+   behavior); provenance is enforced by code regardless of which approach generates
+   field values (see decision 3); cost is controlled by one LLM call per paper, not
+   one per field; provider-independence is met by keeping the LLM behind
+   `LLMProvider` (decision 2).
+2. **`LLMProvider` shape**: `complete(prompt: str, *, max_tokens: int | None) -> str`
+   — raw text in, raw text out, not a schema-typed `extract(...)` method. This same
+   interface is already committed by `architecture.md` §2.3/ADR-002 to later sprints'
+   comparison synthesis, gap-hypothesis phrasing, and grounded Q&A generation, none of
+   which share Understanding's specific JSON shape; a signature baked around this
+   sprint's schema would need to change the moment a later sprint needs free-text
+   generation instead. JSON-schema construction and response parsing are
+   `src/understanding/prompting.py`'s job (application layer), not the interface's.
+3. **Concrete implementation — `OpenAICompatibleLLMProvider`, not a vendor SDK**:
+   implement one `httpx`-based provider speaking the widely-adopted OpenAI-compatible
+   `/chat/completions` HTTP shape, configurable via `base_url`/`api_key`/`model`
+   (constructor args or `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` env vars —
+   deliberately not `OPENAI_API_KEY`, since this class is not tied to OpenAI). This
+   works unmodified against a real OpenAI-compatible host, a local Ollama instance in
+   OpenAI-compat mode, or vLLM — one implementation, provider-neutral by construction,
+   rather than a vendor SDK (`openai`/`anthropic`) that would need its own wrapper to
+   achieve the same neutrality, or a thin "interface + fakes only" placeholder that
+   defers the concrete implementation to a later sprint. `httpx` is the only
+   dependency this decision adds. Because no real LLM endpoint exists in this
+   environment, validation is: (a) full unit-test coverage against mocked HTTP
+   (`httpx.MockTransport`, zero real network calls), and (b) a separate, new `llm`
+   pytest marker (skipped by default via `pytest.mark.skipif` when
+   `LLM_BASE_URL`/`LLM_MODEL` are unset) for a real-endpoint smoke test the user runs
+   outside this session.
+4. **Evidence traceability enforced by code, not trusted from the LLM**: the LLM
+   never emits a `paper_id`/page/`chunk_id` itself. `collect_labeled_evidence` runs
+   the six FR-030–035 field queries through the real `RetrievalPipeline`, pools and
+   labels the results `E1, E2, ...` from real, already-retrieved `EvidenceChunk`s,
+   and the prompt instructs the LLM to cite only those labels. `parse_extraction_
+   response` then resolves each cited label back to a real `EvidencePointer` built
+   from data our code already has — a label the LLM invents or that isn't in the
+   pool is dropped with a warning, never trusted. This is the concrete mechanism
+   satisfying ADR-009's "evidence traceability enforced at the domain-model level."
+5. **`EvidencedStatement`, not `ResearchClaim`, and not embedded in `Method`/etc.**:
+   introduce one new type, `EvidencedStatement(text, evidence, determination)`, in
+   `src/understanding/models.py` — used for both `research_problem` and each
+   `limitations` entry, since both are "a statement + evidence + stated/inferred"
+   with no field asymmetry between them (unlike `Method`/`Dataset`/`Metric`, which
+   participate in `Experiment`'s join and may need cross-paper identity in Sprint 5).
+   Placed in `src/understanding/models.py`, not `src/domain/models`, because it is
+   not yet a documented cross-cutting entity in `architecture.md` §7.3 the way
+   `Method`/`Dataset`/`Metric`/`Experiment` already were — promoting it to
+   `src/domain/models` is deferred until a second capability actually needs it.
+   Named `EvidencedStatement`, not `architecture.md` §7.3's later-sprint
+   `ResearchClaim` entity — deliberately close enough in shape that a future
+   promotion/rename is plausible, but not claimed to *be* that entity now, since
+   `ResearchClaim`'s actual requirements (Sprint 6+, gap analysis) are not yet known.
+6. **`determination` (stated vs. inferred) on every extracted entity**, not just the
+   free-text ones — a dataset/method/metric name can be explicitly stated or only
+   inferable from surrounding context, the same ambiguity `research_problem`/
+   `limitations` have, and the field costs nothing to add uniformly now versus
+   retrofitting it onto `Method`/`Dataset`/`Metric`/`Experiment` later.
+
+**Alternatives considered:**
+- Rule-based/keyword extraction as the sole mechanism — rejected (see decision 1):
+  poor recall on open-ended natural language, no clear improvement path.
+- A schema-typed `LLMProvider.extract(schema, prompt) -> dict` interface — rejected;
+  would leak Understanding's specific extraction shape into a supposedly-general
+  interface `architecture.md`/ADR-002 already commit to later sprints' different
+  generation needs (decision 2).
+- A vendor SDK (`openai`, `anthropic`) instead of a provider-neutral HTTP client —
+  rejected; would require a wrapper to achieve the provider independence
+  `architecture.md` §2.3 requires anyway, so the wrapper might as well be the whole
+  implementation, and a raw HTTP client avoids an extra dependency tree.
+- Deferring the concrete `LLMProvider` implementation entirely (interface + fakes
+  only, no real provider this sprint) — rejected in favor of building
+  `OpenAICompatibleLLMProvider` now, since INF-004 already marks provider choice as
+  "pick one this sprint (P0)" and the mocked-HTTP test strategy makes this safe to
+  do without a live endpoint.
+- Trusting the LLM to self-report `page`/`chunk_id` fields directly in its JSON
+  response — rejected outright; this is precisely the hallucination-prone pattern
+  ADR-009 exists to prevent, hence the evidence-label mechanism (decision 4).
+- Two separate classes (e.g. `ResearchProblem`, `Limitation`) instead of one
+  `EvidencedStatement` — rejected; no field asymmetry exists between them, so two
+  classes would be duplication with no behavioral difference (decision 5).
+- Naming the new type `ResearchClaim` now, matching `architecture.md` §7.3's
+  later-sprint entity — rejected; that entity's actual required shape isn't known
+  until Sprint 6 (Gap Analysis) is scoped, and claiming the name now risks a
+  mismatch that's harder to unwind than a later rename.
+
+**Consequences:** `pyproject.toml` gains `httpx>=0.27` — still no LLM SDK, no VLM
+dependency (Sprint 8+ concern). A new `llm` pytest marker exists alongside
+`integration`, skipped by default; this sprint's understanding pipeline and
+evaluation harness are validated end-to-end only against a fake, deterministic
+`LLMProvider` (see `tests/integration/test_understanding_end_to_end.py` and
+`tests/evaluation/test_understanding_metrics.py`) — real extraction quality against a
+real LLM and real papers remains unvalidated in this environment, stated plainly in
+`evaluation.md` and `implementation-plan.md` rather than implied. If a real endpoint
+later reveals `OpenAICompatibleLLMProvider`'s request/response assumptions don't hold
+for some provider (e.g. a non-standard response shape), that is a new ADR or a
+provider-specific subclass, not a silent change to this one. Table row text
+(`Table.rows`) is not yet fed into extraction prompts as additional evidence context
+— a plausible, cheap future improvement, deliberately deferred and not built this
+sprint (see `implementation-plan.md`'s Sprint 3 non-goals).
+
+---
+
 ## Template for Future ADRs
 
 ```

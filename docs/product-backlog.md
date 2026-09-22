@@ -49,6 +49,18 @@ explicitly deferred this sprint, see `decisions.md` ADR-013/ADR-015 and
 
 ## Understanding
 
+**Status (2026-09-23, Sprint 3):** UND-001–UND-005 done for FR-030–FR-035 — domain
+models in `src/domain/models` (`Method`/`Dataset`/`Metric`/`Experiment`/
+`EvidencePointer`) plus `EvidencedStatement`/`PaperUnderstanding`
+(`src/understanding/models.py`); extraction via one `OpenAICompatibleLLMProvider`
+call per paper over code-labeled, code-resolved evidence (see `decisions.md`
+ADR-016). Not validated against manual annotation or a real corpus — no LLM API key
+or local Ollama instance was available in this environment, and no real curated
+corpus either (same constraint as Sprint 1/2). UND-006 done as a harness
+(`tests/evaluation/test_understanding_metrics.py`, field-accuracy + evidence-page-
+accuracy against a synthetic corpus), but run against a fake deterministic LLM, not
+a real one or a real labeled set — see `evaluation.md`.
+
 | ID | Title | Priority | Description | Acceptance criteria | Dependencies |
 |---|---|---|---|---|---|
 | UND-001 | Define structured-field domain models | P0 | `Method`/`Dataset`/`Metric`/`Experiment` in `src/domain/models` (FR-030–FR-034). | Models exist with an evidence-pointer field; unit tested. | ING-001 |
@@ -156,7 +168,7 @@ text plus its citation *is* the grounded answer — no LLM/paraphrase step this 
 | INF-001 | `DocumentParser` implementation | P0 | Docling or PyMuPDF. | Satisfies `DocumentParser` contract; passes interface test suite. | ING-002 |
 | INF-002 | `EmbeddingProvider` implementation | P0 | `fastembed` (BAAI/bge-small-en-v1.5) — see ADR-015. Done, Sprint 2. | Satisfies `EmbeddingProvider` contract. | RET-001 |
 | INF-003 | `VectorStore` implementation | P0 | `qdrant-client`, embedded/local mode (no server) — see ADR-015. Done, Sprint 2. | Satisfies `VectorStore` contract. | RET-002 |
-| INF-004 | `LLMProvider` implementation | P0 | Hosted API or local LLM. | Satisfies `LLMProvider` contract. | None |
+| INF-004 | `LLMProvider` implementation | P0 | `OpenAICompatibleLLMProvider` (`httpx`-based, provider-neutral) — see ADR-016. Done, Sprint 3. | Satisfies `LLMProvider` contract. | None |
 | INF-005 | `VLMProvider` implementation | P1 | Hosted API or local VLM. | Satisfies `VLMProvider` contract. | MM-001 |
 | INF-006 | `PaperSource` implementation | P1 | arXiv API (candidate). | Satisfies `PaperSource` contract. | DISC-003 |
 | INF-007 | PostgreSQL persistence for structured/metadata store | P1 | Papers, structured fields, relationships. | CRUD works for entities defined at the time. | UND-001 |

@@ -79,6 +79,7 @@ def test_retrieve_maps_scored_chunks_to_evidence_chunks() -> None:
     assert len(results) == 1
     assert results[0].paper_id == "paper_a"
     assert results[0].page == 4
+    assert results[0].chunk_id == "c1"
     assert results[0].text == "evidence"
     assert results[0].score == 0.9
 

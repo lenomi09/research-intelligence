@@ -1,16 +1,17 @@
 # Architecture
 
-**Status:** Sprints 1–2 implemented (Ingestion, Discovery/Retrieval); everything past
-that is still conceptual design — see `implementation-plan.md` for what's actually
-built vs. planned per sprint.
-**Last updated:** 2026-09-22
+**Status:** Sprints 1–3 implemented (Ingestion, Discovery/Retrieval, Understanding);
+everything past that is still conceptual design — see `implementation-plan.md` for
+what's actually built vs. planned per sprint.
+**Last updated:** 2026-09-23
 
 This document describes the intended architecture of the Research Intelligence
 Platform. Most of it is still a design document, not a record of what exists — only
 the components marked implemented in §3 have real code behind them. §8's interface
 table lists every candidate implementation without marking which was actually
 picked; that decision (and why) lives in `decisions.md`'s ADRs (ADR-014 for
-`DocumentParser`, ADR-015 for `EmbeddingProvider`/`VectorStore`), not here.
+`DocumentParser`, ADR-015 for `EmbeddingProvider`/`VectorStore`, ADR-016 for
+`LLMProvider`).
 
 ## 0. Positioning: What This Architecture Is For
 
@@ -129,7 +130,7 @@ see the table below.
 | Domain interfaces | `src/domain/interfaces` | Abstract contracts: `LLMProvider`, `VLMProvider`, `EmbeddingProvider`, `VectorStore`, `DocumentParser`, `PaperSource`. No implementation. | — |
 | Discovery | `src/discovery` | Collects/curates the paper collection; MVP scope: reads back an already-ingested manual/local collection (FR-020) via `LocalCollectionPaperSource`; later, searches external sources, ranks, dedups, filters. | `PaperSource` |
 | Ingestion | `src/ingestion` | Orchestrates parsing a PDF into domain models (text/tables/figures/references/pages) and persisting them; also the read side (`load_paper`) Discovery uses to hydrate a persisted paper back. Does not itself chunk/embed/index — see Retrieval. | `DocumentParser` |
-| Understanding | `src/understanding` *(created when Sprint 3 needs it)* | Extracts structured fields per paper (problem, method, dataset, metrics, results, limitations), each retaining an evidence pointer. | `LLMProvider`, `VectorStore` |
+| Understanding | `src/understanding` | Extracts structured fields per paper (problem, method, dataset, metrics, results, limitations — FR-030–FR-035), each retaining an evidence pointer resolved from real retrieved chunks, never LLM-reported (ADR-009, ADR-016). | `LLMProvider`, `VectorStore` (via `RetrievalPipeline`) |
 | Retrieval | `src/retrieval` | Chunking, embedding, and indexing (`indexing.py`, the write path) plus query embedding/similarity search/(future) reranking (`retrieval.py`, the read path) — a supporting capability used by Understanding, Comparison, and grounded Q&A. | `EmbeddingProvider`, `VectorStore` |
 | Landscape | `src/landscape` *(created when Sprint 4 needs it)* | Clusters papers by theme/direction; surfaces method–dataset relationships across the collection. | (via Understanding output) |
 | Comparison | `src/comparison` *(created when Sprint 5 needs it)* | Compares 2+ papers across structured fields (from Understanding), preserving evidence traceability per compared field. | `LLMProvider` |
@@ -191,14 +192,24 @@ flowchart LR
     R --> CONS[Understanding / Comparison /\ngrounded answer assembly]
 ```
 
-### 4.3 Understanding Pipeline (Sprint 3)
+### 4.3 Understanding Pipeline (Sprint 3 — implemented)
+
+As built: `collect_labeled_evidence` runs one fixed `RetrievalPipeline.retrieve()`
+query per FR-030–035 field, pools/de-duplicates/labels the results (`E1, E2, ...`),
+and one `LLMProvider.complete()` call per paper (not per field) returns JSON citing
+only those labels; `parse_extraction_response` resolves each cited label back to a
+real `EvidencePointer` — the LLM never emits a page/chunk_id itself (ADR-009,
+ADR-016). `STORE` below is `understanding.json` per paper (`src/understanding/
+persistence.py`), sibling to Sprint 1's `metadata.json`.
 
 ```mermaid
 flowchart LR
-    P[Paper: text + tables + figures] --> RET[Retrieve candidate\nevidence per field]
-    RET --> LLM[LLMProvider:\nextract problem/method/\ndataset/metric/result/limitation]
-    LLM --> S[Structured fields\n+ evidence pointer each]
-    S --> STORE[(Structured store)]
+    P[Paper] --> RET[Retrieve + label evidence\nper FR-030-035 field]
+    RET --> PROMPT[Build one prompt\nwith labeled evidence]
+    PROMPT --> LLM[LLMProvider.complete():\nextract problem/method/\ndataset/metric/result/limitation]
+    LLM --> PARSE[Parse JSON, resolve\ncited labels to real\nEvidencePointers]
+    PARSE --> S[PaperUnderstanding\n+ evidence pointer each]
+    S --> STORE[(understanding.json)]
 ```
 
 ### 4.4 Comparison Pipeline (Sprint 5)
@@ -311,7 +322,10 @@ erDiagram
 ### 7.3 Research Knowledge (Sprint 3+ — Understanding, Landscape, Gap Analysis)
 
 What's *interpreted* from a paper's content — every entity here traces back to a
-`Paper` and, per NFR-011, ultimately to specific evidence within it:
+`Paper` and, per NFR-011, ultimately to specific evidence within it. `Method`,
+`Dataset`, `Metric`, and `Experiment` are implemented (Sprint 3, `src/domain/
+models/`); `ResearchTopic`, `ResearchClaim`, and `ResearchGapHypothesis` remain
+future (Sprint 4/6+) design, not yet built:
 
 ```mermaid
 erDiagram
@@ -326,13 +340,13 @@ erDiagram
 
 | Entity | Description |
 |---|---|
-| `ResearchTopic` | A theme/direction a paper is grouped under (Landscape capability). |
-| `Method` | A model/algorithm/technique referenced by a paper. |
-| `Dataset` | A dataset used for evaluation. |
-| `Metric` | An evaluation metric used to report results. |
-| `Experiment` | A specific method+dataset+metric+result combination within a paper — the join point between a `Paper` and the `Method`/`Dataset`/`Metric` it used. |
-| `ResearchClaim` | A generated statement (answer, comparison cell, landscape summary) with a traceable evidence pointer (NFR-011). |
-| `ResearchGapHypothesis` | A candidate gap, always carrying supporting/contradicting evidence counts and a paper list (NFR-012). |
+| `ResearchTopic` | A theme/direction a paper is grouped under (Landscape capability, not yet built). |
+| `Method` | A model/algorithm/technique referenced by a paper — implemented, `evidence: list[EvidencePointer]` + `determination: "stated"\|"inferred"`. |
+| `Dataset` | A dataset used for evaluation — implemented, same evidence/determination shape as `Method`. |
+| `Metric` | An evaluation metric used to report results — implemented, same shape. |
+| `Experiment` | A specific method+dataset+metric+result combination within a paper — the join point between a `Paper` and the `Method`/`Dataset`/`Metric` it used, referenced by id, not embedded — implemented. |
+| `ResearchClaim` | A generated statement (answer, comparison cell, landscape summary) with a traceable evidence pointer (NFR-011) — not yet built. Sprint 3's `research_problem`/`limitations` fields are **not** modeled as `ResearchClaim`; they use a separate, narrower `EvidencedStatement` type (`src/understanding/models.py`, not yet promoted to this diagram) — see ADR-016 for why this ER diagram had no entity for them and the resolution chosen. |
+| `ResearchGapHypothesis` | A candidate gap, always carrying supporting/contradicting evidence counts and a paper list (NFR-012) — not yet built. |
 
 ## 8. Replaceability — What "Provider Independence" Means Concretely
 
@@ -346,7 +360,7 @@ application-layer package:
 | `EmbeddingProvider` | BGE, Jina | config |
 | `RerankerProvider` | BGE reranker, Jina reranker | config |
 | `VectorStore` | Qdrant, pgvector | config |
-| `LLMProvider` | Hosted API (e.g. OpenAI-compatible), local LLM | config |
+| `LLMProvider` | Hosted API (e.g. OpenAI-compatible), local LLM | config — `OpenAICompatibleLLMProvider` implemented (Sprint 3, ADR-016), mirrors ADR-015's cross-reference pattern for `EmbeddingProvider`/`VectorStore` |
 | `VLMProvider` | Hosted API, local VLM | config |
 | `PaperSource` | arXiv API, other future sources | config |
 

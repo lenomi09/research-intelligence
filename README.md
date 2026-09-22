@@ -42,28 +42,37 @@ limitations recur, and where the literature is thin.
 
 ## Current Status
 
-**Sprints 1 and 2 (Ingestion; Discovery and Retrieval) are implemented.** The full
-documentation set below was written in Phase 0. Sprint 1 (defined in
-[docs/implementation-plan.md](docs/implementation-plan.md)) built a PDF ingestion
-pipeline — metadata, text, tables, figures, references, and page-level evidence, for
-one PDF at a time, persisted as structured JSON (see "Ingestion Output Layout"
-below). Sprint 2 built on that: a local `PaperSource` that reads ingested papers
-back, chunking, embedding (`fastembed`), a local vector index (`qdrant-client`
+**Sprints 1–3 (Ingestion; Discovery and Retrieval; Structured Paper Understanding)
+are implemented.** The full documentation set below was written in Phase 0. Sprint 1
+(defined in [docs/implementation-plan.md](docs/implementation-plan.md)) built a PDF
+ingestion pipeline — metadata, text, tables, figures, references, and page-level
+evidence, for one PDF at a time, persisted as structured JSON (see "Ingestion Output
+Layout" below). Sprint 2 built on that: a local `PaperSource` that reads ingested
+papers back, chunking, embedding (`fastembed`), a local vector index (`qdrant-client`
 embedded mode), and a retrieval pipeline that returns ranked, cited evidence for a
-question, with paper-scoped filtering (see "Retrieval Output Layout" below). See
-[docs/decisions.md](docs/decisions.md) ADR-014/ADR-015 for what changed from the
-original plan (parser choice, embedding/vector-store choices, small domain-model
-additions) and why.
+question, with paper-scoped filtering (see "Retrieval Output Layout" below). Sprint 3
+builds on both: per-paper extraction of research problem, methodology, dataset,
+metric, result, and limitation (FR-030–FR-035), each with an evidence pointer
+resolved by code (never trusted from the LLM) back to a real retrieved chunk — see
+"Understanding Output Layout" and "Running Sprint 3" below. See
+[docs/decisions.md](docs/decisions.md) ADR-014/ADR-015/ADR-016 for what changed from
+the original plan (parser choice, embedding/vector-store choices, LLM provider
+choice, small domain-model additions) and why.
 
-No structured understanding, comparison, landscape, gap analysis, or agent logic
-exists yet, and no LLM is used anywhere — retrieval returns the evidence chunk
-itself as the "answer," not an LLM-generated one (a deliberate Sprint 2 scoping
-decision, see `implementation-plan.md`'s Sprint 2 status note).
+No comparison, landscape, gap analysis, or agent logic exists yet. Sprint 3 is the
+first sprint to use an LLM — `LLMProvider` is a provider-neutral interface with one
+implementation, `OpenAICompatibleLLMProvider` (works against any OpenAI-compatible
+HTTP endpoint, including a local Ollama instance).
 
-Both pipelines have been validated with unit and integration tests (using PDFs
-generated on the fly with PyMuPDF, not committed fixtures, and a synthetic retrieval
-evaluation set) but **not yet run against a real curated AI/CV/ML paper collection**
-— see "Local Development" below for how to try it against your own PDFs.
+All three pipelines have been validated with unit and integration tests (using PDFs
+generated on the fly with PyMuPDF, not committed fixtures, and synthetic evaluation
+sets) but **not yet run against a real curated AI/CV/ML paper collection** — see
+"Local Development" below for how to try Sprint 1/2 against your own PDFs. Sprint 3
+additionally has **not been run against a real LLM in this environment** — no LLM
+API key or local Ollama instance was available; it was validated with mocked HTTP,
+a fake deterministic `LLMProvider` run through the real ingestion/retrieval stack,
+and a synthetic evaluation harness — see "Running Sprint 3" below for how to point
+it at a real endpoint yourself.
 
 ## Documentation
 
@@ -131,7 +140,7 @@ See [docs/implementation-plan.md](docs/implementation-plan.md) for full detail.
 | Phase 0 | Planning (this stage) |
 | Sprint 1 | Scientific paper ingestion (text/tables/figures/references/metadata) — done |
 | Sprint 2 | Paper discovery (curated collection input) and retrieval — done |
-| Sprint 3 | Structured paper understanding (problem/method/dataset/metric/result/limitation) — completes the MVP — **current target** |
+| Sprint 3 | Structured paper understanding (problem/method/dataset/metric/result/limitation) — completes the MVP — done |
 | Sprint 4 | Research landscape and clustering |
 | Sprint 5 | Multi-paper comparison |
 | Sprint 6 | Evidence-based research gap analysis |
@@ -146,28 +155,30 @@ research-intelligence-platform/
 ├── docs/                    # Planning and technical documentation
 ├── src/
 │   ├── domain/
-│   │   ├── models/          # Paper, Author, Page, TextBlock, Section, Figure, Table, Citation, Chunk (implemented)
+│   │   ├── models/          # Paper, ..., Chunk, Method, Dataset, Metric, Experiment, EvidencePointer (implemented)
 │   │   ├── schemas/         # Shared validation/serialization schemas (not yet needed — see below)
-│   │   └── interfaces/      # DocumentParser, EmbeddingProvider, VectorStore, PaperSource (implemented); LLM/VLM (future)
+│   │   └── interfaces/      # DocumentParser, EmbeddingProvider, VectorStore, PaperSource, LLMProvider (implemented); VLM (future)
 │   ├── ingestion/           # Ingestion orchestration: pipeline, assets, validation, persistence (read+write), report
 │   ├── discovery/           # PaperSource capability boundary (interface-only; see infrastructure/paper_sources)
 │   ├── retrieval/           # chunking.py, indexing.py (write path), retrieval.py (read path) — implemented
+│   ├── understanding/       # models.py, prompting.py, pipeline.py, persistence.py — implemented (Sprint 3)
 │   ├── infrastructure/
 │   │   ├── parsers/          # PyMuPDFDocumentParser + parsing heuristics (implemented)
 │   │   ├── embeddings/        # FastEmbedProvider (implemented)
 │   │   ├── vector_stores/      # QdrantLocalVectorStore (implemented)
-│   │   └── paper_sources/       # LocalCollectionPaperSource (implemented)
+│   │   ├── paper_sources/       # LocalCollectionPaperSource (implemented)
+│   │   └── llm/                  # OpenAICompatibleLLMProvider (implemented)
 │   ├── multimodal/          # Figure/table understanding orchestration (supporting capability, Sprint 8)
 │   ├── agent/                # (future) research workflow orchestration
 │   ├── tools/                 # (future) agent-invocable capabilities
 │   └── api/                   # FastAPI application (future)
-│   # understanding/, landscape/, comparison/, gap_analysis/, graph/ are documented
-│   # in architecture.md and created when their sprint begins — not scaffolded
-│   # ahead of need.
+│   # landscape/, comparison/, gap_analysis/, graph/ are documented in
+│   # architecture.md and created when their sprint begins — not scaffolded ahead
+│   # of need.
 ├── tests/
 │   ├── unit/                # Domain models, heuristics, pipeline orchestration (fakes only, no real I/O)
-│   ├── integration/         # Real parser/embedder/vector-store against generated PDFs
-│   └── evaluation/          # Retrieval Recall@K/MRR harness against a synthetic eval set
+│   ├── integration/         # Real parser/embedder/vector-store/LLM-pipeline against generated PDFs (llm marker skipped by default)
+│   └── evaluation/          # Retrieval Recall@K/MRR + Understanding field/evidence-accuracy harnesses against synthetic eval sets
 ├── data/
 │   ├── papers/
 │   │   ├── raw/              # Local input PDFs you place here (gitignored)
@@ -178,7 +189,8 @@ research-intelligence-platform/
 ├── scripts/
 │   ├── ingest.py                # Sprint 1 CLI entry point
 │   ├── index.py                  # Sprint 2 CLI: build the local retrieval index
-│   └── search.py                  # Sprint 2 CLI: query the index
+│   ├── search.py                  # Sprint 2 CLI: query the index
+│   └── understand.py               # Sprint 3 CLI: extract structured understanding
 ├── config/                       # Configuration files (not yet needed — no config exists yet)
 ├── pyproject.toml
 ├── docker-compose.yml
@@ -192,21 +204,27 @@ but still empty, reserved for their documented future sprints.
 
 ## Local Development
 
-Both pipelines are runnable locally. No API keys or `.env` file are needed — nothing
-here calls a paid service. `scripts/index.py`/`scripts/search.py` do need network
-access on their *first* run only, to download the `fastembed` model (~130MB,
-cached afterward under the OS's standard cache directory).
+Ingestion and Retrieval (Sprints 1–2) are runnable locally with no API keys or
+`.env` file — nothing there calls a paid service. `scripts/index.py`/
+`scripts/search.py` do need network access on their *first* run only, to download
+the `fastembed` model (~130MB, cached afterward under the OS's standard cache
+directory). Understanding (Sprint 3) additionally needs a real LLM endpoint — see
+"Running Sprint 3" below.
 
 ```bash
 python -m venv .venv
 .venv/Scripts/activate       # Windows; use `source .venv/bin/activate` on macOS/Linux
 pip install -e ".[dev]"
 
-# Run the unit test suite (fakes only, no network, no real papers/models needed):
-pytest -m "not integration"
+# Run the unit test suite (fakes only, no network, no real papers/models/LLM needed):
+pytest -m "not integration and not llm"
 
-# Run everything, including real fastembed/qdrant-client integration tests and the
-# evaluation harness (downloads the embedding model on first run):
+# Run everything except the real-LLM smoke test (downloads the embedding model on
+# first run; the `llm`-marked test skips automatically without LLM_BASE_URL/LLM_MODEL):
+pytest -m "not llm"
+
+# Run absolutely everything, including the real-LLM smoke test (needs LLM_BASE_URL/
+# LLM_MODEL/LLM_API_KEY set — see "Running Sprint 3" below):
 pytest
 
 # Ingest, then index, then search your own PDFs:
@@ -270,6 +288,55 @@ derived from extracted paper text). If you change the embedding model, delete
 `data/index/` and re-run `scripts/index.py`: `QdrantLocalVectorStore` refuses to open
 an existing collection built with a different vector dimension rather than silently
 producing wrong results.
+
+## Understanding Output Layout
+
+Running `scripts/understand.py` writes one `understanding.json` per paper, sibling
+to Sprint 1's `metadata.json`:
+
+```
+data/papers/processed/<paper_id>/
+└── understanding.json     # PaperUnderstanding — research_problem, methods,
+                            # datasets, metrics, experiments, limitations, each
+                            # with evidence pointers (paper_id/page/chunk_id) and
+                            # a stated/inferred determination; plus
+                            # extraction_status (ok/partial/failed) and warnings
+```
+
+Not committed, same reasoning as the rest of `data/papers/processed/`.
+
+## Running Sprint 3
+
+Unlike Sprints 1–2, Understanding needs a real LLM endpoint — there is no
+network-free path. `LLMProvider`'s only implementation,
+`OpenAICompatibleLLMProvider`, speaks the widely-adopted OpenAI-compatible
+`/chat/completions` HTTP shape (see [docs/decisions.md](docs/decisions.md)
+ADR-016), so it works against a real hosted OpenAI-compatible endpoint or a local
+model server such as Ollama running in OpenAI-compat mode:
+
+```bash
+# Point at a real OpenAI-compatible endpoint:
+export LLM_BASE_URL="https://api.example.com/v1"
+export LLM_API_KEY="..."
+export LLM_MODEL="..."
+
+# Or point at a local Ollama instance (no API key needed):
+export LLM_BASE_URL="http://localhost:11434/v1"
+export LLM_MODEL="llama3"
+
+# Requires scripts/ingest.py and scripts/index.py to have already been run:
+python scripts/understand.py
+#      Output: data/papers/processed/<paper_id>/understanding.json per paper (see
+#      "Understanding Output Layout" above).
+
+# Real-LLM smoke test (skipped by default without the env vars above):
+pytest -m llm
+```
+
+This session had no LLM API key and no local Ollama instance available, so
+`scripts/understand.py` and the `llm`-marked smoke test were not run here —
+Understanding was validated with mocked HTTP and a fake deterministic `LLMProvider`
+instead (see "Current Status" above and `docs/decisions.md` ADR-016).
 
 ## Contributing
 

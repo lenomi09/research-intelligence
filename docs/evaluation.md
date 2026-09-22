@@ -1,12 +1,13 @@
 # Evaluation Strategy
 
-**Status:** Phase 0 — Planning
-**Last updated:** 2026-09-22
+**Status:** Sprints 1–3 implemented; Retrieval and Extraction harnesses exist (see
+their sections below). Everything else below is still **Planned**.
+**Last updated:** 2026-09-23
 
 Evaluation is treated as a first-class concern from the start (NFR-010), not something
 added after the system "works." This document defines *how* the Research Intelligence
 Platform will be measured, across all of its capability areas — not just single-document
-Q&A. It does not report any results, because no implementation exists yet.
+Q&A.
 
 **A hard rule for this document and for the product itself:** every section below is
 labeled **Planned** (defined here, not yet implemented), **Implemented** (a harness
@@ -38,22 +39,29 @@ Applies to `src/discovery` once external paper search exists (Sprint 2+).
   the fraction present in the top-K results.
 - **NDCG@K** — rank-aware relevance quality of the top-K results.
 
-## Extraction (Understanding) Metrics — **Planned**
+## Extraction (Understanding) Metrics — **Implemented**
 
-Applies to `src/understanding` (Sprint 3+).
+Applies to `src/understanding` (Sprint 3).
 
-- **Metadata extraction accuracy** — fraction of papers with correctly extracted
-  title/authors/venue/date, judged against manual annotation.
-- **Method extraction accuracy** — fraction of papers with a correctly identified
-  method/model/algorithm.
-- **Dataset extraction accuracy** — fraction of papers with correctly identified
-  dataset(s).
-- **Metric extraction accuracy** — fraction of papers with correctly identified
-  evaluation metric(s).
+- **Field accuracy** — fraction of eval items where the extracted field's text
+  contains the expected substring, judged against a hand-authored known-correct set.
+- **Evidence-page accuracy** — of the field-accuracy hits, the fraction whose
+  resolved `EvidencePointer` page matches the expected page.
 
-These require a small hand-labeled set of (paper → expected field values) pairs, defined
-in the benchmark dataset (see below). Extraction accuracy is treated as a ceiling on
-every downstream capability (Comparison, Landscape, Gap Analysis) — see
+These require a small hand-labeled set of (paper → expected field values → expected
+page) triples. A harness computing both exists at
+`tests/evaluation/test_understanding_metrics.py`, run against
+`tests/evaluation/understanding_eval_set.jsonl` — **a small hand-built synthetic
+corpus (2 papers, 10 eval items) and a deterministic FAKE `LLMProvider` that returns
+known-correct JSON, not a real LLM** (none was available in this environment — see
+`decisions.md` ADR-016) **and not a real curated collection** (same constraint
+Sprint 1/2 operated under). This demonstrates the harness mechanics work end to end
+through real chunking/embedding/retrieval and the real prompting/parsing pipeline,
+not validated extraction quality against a real LLM or real papers — no claim of
+extraction quality is made here per this document's own rule above; see the Sprint 3
+session's final report for the actual figures produced on the synthetic set.
+Extraction accuracy (once measured against a real LLM and real papers) is treated as
+a ceiling on every downstream capability (Comparison, Landscape, Gap Analysis) — see
 `implementation-plan.md` Sprint 3 risks.
 
 ## Retrieval Metrics — **Implemented**

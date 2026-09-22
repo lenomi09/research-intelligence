@@ -1,0 +1,10 @@
+{"id": "eval_001", "paper_id": "paper_nlp", "field": "research_problem", "expected_substring": "machine translation quality", "expected_page": 1}
+{"id": "eval_002", "paper_id": "paper_nlp", "field": "methods", "expected_substring": "Transformer", "expected_page": 1}
+{"id": "eval_003", "paper_id": "paper_nlp", "field": "datasets", "expected_substring": "WMT14", "expected_page": 1}
+{"id": "eval_004", "paper_id": "paper_nlp", "field": "metrics", "expected_substring": "BLEU", "expected_page": 1}
+{"id": "eval_005", "paper_id": "paper_nlp", "field": "limitations", "expected_substring": "only evaluated on one language pair", "expected_page": 1}
+{"id": "eval_006", "paper_id": "paper_rl", "field": "research_problem", "expected_substring": "robotic arm manipulation", "expected_page": 1}
+{"id": "eval_007", "paper_id": "paper_rl", "field": "methods", "expected_substring": "PPO", "expected_page": 1}
+{"id": "eval_008", "paper_id": "paper_rl", "field": "datasets", "expected_substring": "simulated grasping benchmark", "expected_page": 1}
+{"id": "eval_009", "paper_id": "paper_rl", "field": "metrics", "expected_substring": "success rate", "expected_page": 1}
+{"id": "eval_010", "paper_id": "paper_rl", "field": "limitations", "expected_substring": "not tested on a physical robot", "expected_page": 1}

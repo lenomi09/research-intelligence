@@ -9,6 +9,7 @@ from src.domain.interfaces.embedding_provider import (
     EmbeddingProvider,
     Vector,
 )
+from src.domain.interfaces.llm_provider import LLMError, LLMProvider
 from src.domain.interfaces.paper_source import PaperSource, PaperSourceError
 from src.domain.interfaces.vector_store import (
     ScoredChunk,
@@ -22,6 +23,8 @@ __all__ = [
     "EmbeddingError",
     "EmbeddingProvider",
     "InvalidDocumentError",
+    "LLMError",
+    "LLMProvider",
     "PaperSource",
     "PaperSourceError",
     "ParseResult",

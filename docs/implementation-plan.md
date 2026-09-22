@@ -1,7 +1,8 @@
 # Implementation Plan
 
-**Status:** Phase 0 — Planning
-**Last updated:** 2026-09-22
+**Status:** Sprints 1–3 implemented (see each sprint's status note below); Sprint 4+
+still planning.
+**Last updated:** 2026-09-23
 
 This document sequences work into phases and sprints, and defines Sprint 1 in detail.
 Sprints are directional, not fixed-duration — a solo developer should re-plan after each
@@ -91,7 +92,7 @@ deliberately last — see the sequencing ADR in `decisions.md`.
   Recall@K/MRR harness (`tests/evaluation/`). As with Sprint 1, **not** run against a
   real curated AI/CV/ML corpus (none was available in this environment).
 
-### Sprint 3 — Structured Paper Understanding
+### Sprint 3 — Structured Paper Understanding — **Implemented** (see status note below)
 
 - **Objective:** Extract comparable structured fields (problem, method, dataset, metric,
   result, limitation) per paper, each with an evidence pointer — completing the MVP.
@@ -107,6 +108,28 @@ deliberately last — see the sequencing ADR in `decisions.md`.
 - **Risks:** Extraction accuracy for free-text fields (method, limitation) is harder than
   simple retrieval; errors here will propagate into every later capability, so this
   sprint's accuracy sets a ceiling for Sprints 4–7.
+- **Status note:** implemented for FR-030–FR-035 (research problem, methodology,
+  dataset, metric, result, limitation) — "research questions," "contributions,"
+  "future work," and "important scientific claims" were scoped out as not present in
+  `requirements.md`/`product-backlog.md`. `LLMProvider` is a raw text-in/text-out
+  interface; the only implementation is `OpenAICompatibleLLMProvider`
+  (`httpx`-based, provider-neutral — see `decisions.md` ADR-016). Evidence
+  traceability is enforced by code, not trusted from the LLM: retrieval runs first
+  and labels real chunks (`E1, E2, ...`), the LLM only cites those labels, and any
+  label it invents is dropped with a warning rather than trusted (ADR-009). One
+  `LLMProvider.complete()` call per paper, not per field. New domain models
+  `Method`/`Dataset`/`Metric`/`Experiment`/`EvidencePointer` (`src/domain/models`,
+  reused unmodified by later sprints); `EvidencedStatement`/`PaperUnderstanding`
+  (`src/understanding/models.py`, Understanding's own output shape — see ADR-016 for
+  why they aren't yet promoted to `src/domain/models`). **No LLM API key or local
+  Ollama instance was available in this environment** — validated via: full unit
+  tests against mocked HTTP (`httpx.MockTransport`), an integration test running the
+  real ingestion/retrieval stack end-to-end with a fake deterministic `LLMProvider`,
+  and a synthetic evaluation harness (`tests/evaluation/test_understanding_metrics.py`)
+  — also against a fake LLM, not a real one. A real-endpoint smoke test exists
+  (`pytest -m llm`, `tests/integration/test_understand_llm_smoke.py`) but is skipped
+  by default and was not run in this session; running Sprint 3 against a real
+  LLM/real papers is the user's follow-up step (see `README.md` "Running Sprint 3").
 
 ### Sprint 4 — Research Landscape and Clustering
 
@@ -305,3 +328,14 @@ structured scientific paper data for every later Research Intelligence capabilit
   (DISC-003) and reranking (RET-006) remain deferred; no LLM used this sprint. Same
   real-corpus caveat as Sprint 1 — validated with synthetic PDFs and a synthetic
   evaluation set, not a real curated collection.
+- 2026-09-23: Sprint 3 implemented — FR-030–FR-035 extraction (problem, methodology,
+  dataset, metric, result, limitation) via one `LLMProvider.complete()` call per
+  paper, over evidence chunks retrieved and labeled by code (never LLM-reported page
+  numbers); `OpenAICompatibleLLMProvider` (`httpx`-based) is the sole `LLMProvider`
+  implementation; `Method`/`Dataset`/`Metric`/`Experiment`/`EvidencePointer` added to
+  `src/domain/models`, `EvidencedStatement`/`PaperUnderstanding` added to
+  `src/understanding/models.py` (see `decisions.md` ADR-016 for all of the above).
+  No LLM API key or local Ollama instance was available in this environment — Sprint
+  3 was validated with mocked HTTP, a fake deterministic `LLMProvider` end-to-end,
+  and a synthetic evaluation harness, not a real LLM or a real curated corpus. A
+  real-endpoint smoke test exists (`pytest -m llm`) but was not run here.

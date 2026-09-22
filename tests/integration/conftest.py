@@ -10,7 +10,9 @@ import pymupdf
 import pytest
 
 
-def _add_solid_image(page: pymupdf.Page, rect: pymupdf.Rect, rgb: tuple[int, int, int]) -> None:
+def _add_solid_image(
+    page: pymupdf.Page, rect: pymupdf.Rect, rgb: tuple[int, int, int]
+) -> None:
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
     pix.set_rect(pix.irect, rgb)
     page.insert_image(rect, pixmap=pix)
@@ -87,6 +89,31 @@ def pdf_without_metadata_or_references(tmp_path: Path) -> Path:
         fontsize=10,
     )
     pdf_path = tmp_path / "no_metadata.pdf"
+    doc.save(pdf_path)
+    doc.close()
+    return pdf_path
+
+
+@pytest.fixture
+def multi_page_references_pdf(tmp_path: Path) -> Path:
+    """A 3-page PDF whose References section spans two pages, to exercise per-citation
+    page attribution (a references section is not always on a single page)."""
+    doc = pymupdf.open()
+
+    page1 = doc.new_page()
+    page1.insert_text((72, 72), "A Paper With Multi-Page References", fontsize=18)
+    page1.insert_text((72, 100), "Jane Doe", fontsize=11)
+    page1.insert_text((72, 140), "Body text for the paper.", fontsize=10)
+
+    page2 = doc.new_page()
+    page2.insert_text((72, 72), "References", fontsize=13)
+    page2.insert_text((72, 90), "[1] A. Author. Paper One. 2020.", fontsize=9)
+
+    page3 = doc.new_page()
+    page3.insert_text((72, 72), "[2] B. Author. Paper Two. 2021.", fontsize=9)
+
+    doc.set_metadata({"title": "A Paper With Multi-Page References"})
+    pdf_path = tmp_path / "multi_page_references.pdf"
     doc.save(pdf_path)
     doc.close()
     return pdf_path

@@ -98,7 +98,7 @@ def _print_report(report: IngestionReport) -> None:
         f"warnings={report.warning_count} errors={report.error_count}"
     )
     for issue in report.issues:
-        page = f" (page {issue.page})" if issue.page else ""
+        page = f" (page {issue.page})" if issue.page is not None else ""
         print(f"    [{issue.severity}] {issue.stage}{page}: {issue.message}")
 
 

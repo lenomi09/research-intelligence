@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import statistics
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pymupdf
@@ -56,6 +57,24 @@ logger = logging.getLogger(__name__)
 _BOLD_FLAG = 1 << 4
 _STOP_CAPTURING_HEADINGS = {"appendix", "acknowledgements", "acknowledgments"}
 
+LineRecord = tuple[str, tuple[float, float, float, float], list[TextSpan]]
+
+
+@dataclass(frozen=True)
+class _PageContent:
+    """One page's text, extracted in a single walk of PyMuPDF's ``dict`` output.
+
+    ``line_records`` (line granularity, with per-span font info) drives heading and
+    caption detection; ``block_specs`` (block/paragraph granularity) drives
+    ``TextBlock`` creation. Both come from the same walk so there is exactly one
+    place that interprets PyMuPDF's block/line structure.
+    """
+
+    line_records: list[LineRecord] = field(default_factory=list)
+    block_specs: list[tuple[str, tuple[float, float, float, float]]] = field(
+        default_factory=list
+    )
+
 
 class PyMuPDFDocumentParser(DocumentParser):
     """DocumentParser implementation backed by PyMuPDF. See module docstring for
@@ -65,9 +84,7 @@ class PyMuPDFDocumentParser(DocumentParser):
         try:
             doc = pymupdf.open(pdf_path)
         except Exception as exc:  # pymupdf raises varied exception types for bad files
-            raise InvalidDocumentError(
-                f"could not open '{pdf_path}' as a PDF: {exc}"
-            ) from exc
+            raise InvalidDocumentError(f"could not open '{pdf_path}' as a PDF: {exc}") from exc
 
         try:
             if doc.page_count == 0:
@@ -103,9 +120,9 @@ class PyMuPDFDocumentParser(DocumentParser):
         for page_index in range(doc.page_count):
             page = doc[page_index]
             page_number = page_index + 1
-            page_dict = page.get_text("dict")
+            content = _walk_page_dict(page.get_text("dict"))
+            line_records = content.line_records
 
-            line_records = _extract_line_records(page_dict)
             page_text_length = sum(len(text) for text, _, _ in line_records)
             total_text_length += page_text_length
 
@@ -136,9 +153,22 @@ class PyMuPDFDocumentParser(DocumentParser):
                 else 0.0
             )
 
-            block_counter = _append_text_blocks(
-                page_dict, page_number, block_counter, text_blocks
-            )
+            for block_text, block_bbox in content.block_specs:
+                block_counter += 1
+                text_blocks.append(
+                    TextBlock(
+                        block_id=f"block_{block_counter:04d}",
+                        page=page_number,
+                        text=block_text,
+                        order=block_counter,
+                        bbox=BoundingBox(
+                            x0=block_bbox[0],
+                            y0=block_bbox[1],
+                            x1=block_bbox[2],
+                            y1=block_bbox[3],
+                        ),
+                    )
+                )
 
             for line_text, _line_bbox, spans in line_records:
                 stripped = line_text.strip()
@@ -148,7 +178,11 @@ class PyMuPDFDocumentParser(DocumentParser):
                     capturing_references = True
                     continue
 
-                if capturing_references and heading and stripped.lower().rstrip(".:") in _STOP_CAPTURING_HEADINGS:
+                if (
+                    capturing_references
+                    and heading
+                    and stripped.lower().rstrip(".:") in _STOP_CAPTURING_HEADINGS
+                ):
                     capturing_references = False
 
                 if heading:
@@ -164,15 +198,27 @@ class PyMuPDFDocumentParser(DocumentParser):
                 if capturing_references:
                     references_lines.append((line_text, page_number))
 
-            fig_counter = self._extract_figures(
-                doc, page, page_number, line_records, fig_counter,
-                figures, figure_assets, warnings, paper_id,
+            page_figures, page_figure_assets, figure_warnings, fig_counter = (
+                self._extract_figures(
+                    doc, page, page_number, line_records, fig_counter, paper_id
+                )
             )
+            figures.extend(page_figures)
+            figure_assets.update(page_figure_assets)
+            warnings.extend(figure_warnings)
 
-            table_counter, find_tables_warned = self._extract_tables(
-                page, page_number, line_records, table_counter,
-                tables, warnings, paper_id, find_tables_warned,
+            page_tables, table_warnings, table_counter, find_tables_warned = (
+                self._extract_tables(
+                    page,
+                    page_number,
+                    line_records,
+                    table_counter,
+                    paper_id,
+                    find_tables_warned,
+                )
             )
+            tables.extend(page_tables)
+            warnings.extend(table_warnings)
 
         if total_text_length == 0:
             raise ParsingError(
@@ -209,14 +255,19 @@ class PyMuPDFDocumentParser(DocumentParser):
         doc: pymupdf.Document,
         page: pymupdf.Page,
         page_number: int,
-        line_records: list[tuple[str, tuple[float, float, float, float], list[TextSpan]]],
+        line_records: list[LineRecord],
         fig_counter: int,
-        figures: list[Figure],
-        figure_assets: dict[str, bytes],
-        warnings: list[str],
         paper_id: str,
-    ) -> int:
+    ) -> tuple[list[Figure], dict[str, bytes], list[str], int]:
+        """Extract embedded raster images on this page. Returns (figures, image
+        bytes by figure_id, warnings, updated fig_counter) rather than mutating
+        caller-owned collections, so this method's effect is visible from its
+        return value alone."""
+        figures: list[Figure] = []
+        figure_assets: dict[str, bytes] = {}
+        warnings: list[str] = []
         caption_lines = [(t, b) for t, b, _ in line_records]
+
         for xref, *_ in page.get_images(full=True):
             try:
                 img_info = doc.extract_image(xref)
@@ -255,21 +306,28 @@ class PyMuPDFDocumentParser(DocumentParser):
                 )
                 logger.warning(
                     "stage=figures paper_id=%s page=%s xref=%s error=%s",
-                    paper_id, page_number, xref, exc,
+                    paper_id,
+                    page_number,
+                    xref,
+                    exc,
                 )
-        return fig_counter
+
+        return figures, figure_assets, warnings, fig_counter
 
     def _extract_tables(
         self,
         page: pymupdf.Page,
         page_number: int,
-        line_records: list[tuple[str, tuple[float, float, float, float], list[TextSpan]]],
+        line_records: list[LineRecord],
         table_counter: int,
-        tables: list[Table],
-        warnings: list[str],
         paper_id: str,
         already_warned_unsupported: bool,
-    ) -> tuple[int, bool]:
+    ) -> tuple[list[Table], list[str], int, bool]:
+        """Extract ruled tables on this page via PyMuPDF's table finder. Returns
+        (tables, warnings, updated table_counter, updated already_warned_unsupported)
+        rather than mutating caller-owned collections."""
+        tables: list[Table] = []
+        warnings: list[str] = []
         caption_lines = [(t, b) for t, b, _ in line_records]
 
         if not hasattr(page, "find_tables"):
@@ -278,7 +336,7 @@ class PyMuPDFDocumentParser(DocumentParser):
                     "table extraction unsupported by the installed PyMuPDF version "
                     "(no find_tables); no tables will be extracted for this document"
                 )
-            return table_counter, True
+            return tables, warnings, table_counter, True
 
         try:
             table_finder = page.find_tables()
@@ -287,7 +345,7 @@ class PyMuPDFDocumentParser(DocumentParser):
             logger.warning(
                 "stage=tables paper_id=%s page=%s error=%s", paper_id, page_number, exc
             )
-            return table_counter, already_warned_unsupported
+            return tables, warnings, table_counter, already_warned_unsupported
 
         for found_table in table_finder.tables:
             try:
@@ -312,7 +370,8 @@ class PyMuPDFDocumentParser(DocumentParser):
                 logger.warning(
                     "stage=tables paper_id=%s page=%s error=%s", paper_id, page_number, exc
                 )
-        return table_counter, already_warned_unsupported
+
+        return tables, warnings, table_counter, already_warned_unsupported
 
     def _extract_metadata(
         self,
@@ -325,9 +384,7 @@ class PyMuPDFDocumentParser(DocumentParser):
         pdf_author = (raw_meta.get("author") or "").strip()
 
         if pdf_title and not _looks_like_placeholder_title(pdf_title):
-            authors = [
-                Author(name=n, raw=pdf_author) for n in split_author_line(pdf_author)
-            ]
+            authors = [Author(name=n, raw=pdf_author) for n in split_author_line(pdf_author)]
             return pdf_title, authors, "pdf_metadata", None
 
         guessed_title, guessed_author_line = guess_title_and_authors(first_page_lines)
@@ -346,9 +403,7 @@ class PyMuPDFDocumentParser(DocumentParser):
             )
             return guessed_title, authors, "heuristic", None
 
-        warnings.append(
-            "could not determine title/authors from PDF metadata or page-1 layout"
-        )
+        warnings.append("could not determine title/authors from PDF metadata or page-1 layout")
         return None, [], "unavailable", None
 
     def _extract_citations(
@@ -357,12 +412,10 @@ class PyMuPDFDocumentParser(DocumentParser):
         if not references_lines:
             return [], ["references section not detected; no citations extracted"]
 
-        references_page = references_lines[0][1]
-        blob = "\n".join(text for text, _ in references_lines)
-        entries = split_reference_entries(blob)
+        entries = split_reference_entries(references_lines)
 
         warnings: list[str] = []
-        if len(entries) == 1:
+        if len(entries) == 1 and entries[0][1] is None:
             warnings.append(
                 "references section found but could not be confidently split into "
                 "individual entries; stored as a single citation"
@@ -372,21 +425,26 @@ class PyMuPDFDocumentParser(DocumentParser):
             Citation(
                 citation_id=f"citation_{i + 1:03d}",
                 raw_text=raw_text,
-                page=references_page,
+                page=page,
                 marker=marker,
             )
-            for i, (raw_text, marker) in enumerate(entries)
+            for i, (raw_text, marker, page) in enumerate(entries)
         ]
         return citations, warnings
 
 
-def _extract_line_records(
-    page_dict: dict,
-) -> list[tuple[str, tuple[float, float, float, float], list[TextSpan]]]:
-    records: list[tuple[str, tuple[float, float, float, float], list[TextSpan]]] = []
+def _walk_page_dict(page_dict: dict) -> _PageContent:
+    """Walk PyMuPDF's ``get_text("dict")`` output once, producing both line-level
+    records (for heading/caption/reference-capture heuristics) and block-level text
+    (for ``TextBlock`` creation) — see ``_PageContent``."""
+    line_records: list[LineRecord] = []
+    block_specs: list[tuple[str, tuple[float, float, float, float]]] = []
+
     for block in page_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
+
+        block_line_texts: list[str] = []
         for line in block.get("lines", []):
             spans = [
                 TextSpan(
@@ -400,38 +458,15 @@ def _extract_line_records(
             if not line_text.strip():
                 continue
             bbox = tuple(line.get("bbox", (0.0, 0.0, 0.0, 0.0)))
-            records.append((line_text, bbox, spans))
-    return records
+            line_records.append((line_text, bbox, spans))
+            block_line_texts.append(line_text)
 
+        block_text = " ".join(block_line_texts).strip()
+        if block_text:
+            block_bbox = tuple(block.get("bbox", (0.0, 0.0, 0.0, 0.0)))
+            block_specs.append((block_text, block_bbox))
 
-def _append_text_blocks(
-    page_dict: dict,
-    page_number: int,
-    block_counter: int,
-    text_blocks: list[TextBlock],
-) -> int:
-    for block in page_dict.get("blocks", []):
-        if block.get("type") != 0:
-            continue
-        block_lines = [
-            "".join(s.get("text", "") for s in line.get("spans", []))
-            for line in block.get("lines", [])
-        ]
-        block_text = " ".join(t for t in block_lines if t.strip()).strip()
-        if not block_text:
-            continue
-        bbox = block.get("bbox", (0.0, 0.0, 0.0, 0.0))
-        block_counter += 1
-        text_blocks.append(
-            TextBlock(
-                block_id=f"block_{block_counter:04d}",
-                page=page_number,
-                text=block_text,
-                order=block_counter,
-                bbox=BoundingBox(x0=bbox[0], y0=bbox[1], x1=bbox[2], y1=bbox[3]),
-            )
-        )
-    return block_counter
+    return _PageContent(line_records=line_records, block_specs=block_specs)
 
 
 def _looks_like_placeholder_title(title: str) -> bool:

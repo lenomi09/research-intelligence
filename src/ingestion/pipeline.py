@@ -57,13 +57,17 @@ class IngestionPipeline:
         except InvalidDocumentError as exc:
             logger.error(
                 "stage=parsing paper_id=%s source=%s status=invalid_document error=%s",
-                paper_id, pdf_path, exc,
+                paper_id,
+                pdf_path,
+                exc,
             )
             return build_failure_report(paper_id, str(pdf_path), str(exc))
         except ParsingError as exc:
             logger.error(
                 "stage=parsing paper_id=%s source=%s status=parsing_failed error=%s",
-                paper_id, pdf_path, exc,
+                paper_id,
+                pdf_path,
+                exc,
             )
             return build_failure_report(paper_id, str(pdf_path), str(exc))
 
@@ -76,7 +80,12 @@ class IngestionPipeline:
         logger.info(
             "stage=ingest paper_id=%s status=done pages=%s figures=%s tables=%s "
             "citations=%s warnings=%s errors=%s",
-            paper_id, report.page_count, report.figure_count, report.table_count,
-            report.citation_count, report.warning_count, report.error_count,
+            paper_id,
+            report.page_count,
+            report.figure_count,
+            report.table_count,
+            report.citation_count,
+            report.warning_count,
+            report.error_count,
         )
         return report

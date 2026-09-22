@@ -16,7 +16,9 @@ def parser() -> PyMuPDFDocumentParser:
     return PyMuPDFDocumentParser()
 
 
-def test_parses_metadata_text_pages(parser: PyMuPDFDocumentParser, well_formed_pdf: Path) -> None:
+def test_parses_metadata_text_pages(
+    parser: PyMuPDFDocumentParser, well_formed_pdf: Path
+) -> None:
     result = parser.parse(well_formed_pdf, paper_id="paper_001")
     paper = result.paper
 
@@ -67,6 +69,19 @@ def test_extracts_citations_from_references_section(
     assert citations[0].marker == "1"
     assert "Referenced Paper" in citations[0].raw_text
     assert all(c.page == 3 for c in citations)
+
+
+def test_attributes_each_citation_to_its_own_page_across_a_multi_page_section(
+    parser: PyMuPDFDocumentParser, multi_page_references_pdf: Path
+) -> None:
+    """Regression test: citations must not all be attributed to the references
+    section's first page when the section actually spans multiple pages."""
+    result = parser.parse(multi_page_references_pdf, paper_id="paper_multi_ref")
+    citations = result.paper.citations
+
+    assert len(citations) == 2
+    assert citations[0].page == 2
+    assert citations[1].page == 3
 
 
 def test_falls_back_to_heuristic_metadata_when_pdf_metadata_missing(

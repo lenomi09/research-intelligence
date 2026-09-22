@@ -97,19 +97,47 @@ def test_is_references_heading_matches_standalone_heading_only() -> None:
 
 
 def test_split_reference_entries_splits_numbered_markers() -> None:
-    blob = "[1] A. Author. Paper One. 2020.\n[2] B. Author. Paper Two. 2021."
-    entries = split_reference_entries(blob)
+    lines = [
+        ("[1] A. Author. Paper One. 2020.", 5),
+        ("[2] B. Author. Paper Two. 2021.", 5),
+    ]
+    entries = split_reference_entries(lines)
     assert len(entries) == 2
-    assert entries[0] == ("[1] A. Author. Paper One. 2020.", "1")
-    assert entries[1] == ("[2] B. Author. Paper Two. 2021.", "2")
+    assert entries[0] == ("[1] A. Author. Paper One. 2020.", "1", 5)
+    assert entries[1] == ("[2] B. Author. Paper Two. 2021.", "2", 5)
+
+
+def test_split_reference_entries_attributes_each_entry_to_its_own_page() -> None:
+    """A references section spanning multiple pages must not attribute every
+    citation to the section's first page (regression test for a provenance bug)."""
+    lines = [
+        ("[1] A. Author. Paper One. 2020.", 9),
+        ("[2] B. Author. Paper Two. 2021.", 10),
+    ]
+    entries = split_reference_entries(lines)
+    assert entries[0][2] == 9
+    assert entries[1][2] == 10
+
+
+def test_split_reference_entries_keeps_marker_for_single_genuine_reference() -> None:
+    """A document with exactly one correctly marked reference must keep that marker,
+    not be treated as low-confidence just because there's only one entry (regression
+    test: a genuine single-entry split was previously indistinguishable from an
+    unrecognized blob and silently lost its marker)."""
+    lines = [("[1] A. Author. Only Reference. 2020.", 5)]
+    entries = split_reference_entries(lines)
+    assert entries == [("[1] A. Author. Only Reference. 2020.", "1", 5)]
 
 
 def test_split_reference_entries_falls_back_to_single_entry_when_unrecognized() -> None:
-    blob = "Some reference text\nwith no recognizable markers at all"
-    entries = split_reference_entries(blob)
+    lines = [
+        ("Some reference text", 5),
+        ("with no recognizable markers at all", 5),
+    ]
+    entries = split_reference_entries(lines)
     assert len(entries) == 1
     assert entries[0][1] is None
 
 
 def test_split_reference_entries_empty_input() -> None:
-    assert split_reference_entries("") == []
+    assert split_reference_entries([]) == []

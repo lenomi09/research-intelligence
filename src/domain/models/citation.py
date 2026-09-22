@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Citation(BaseModel):
@@ -18,5 +18,5 @@ class Citation(BaseModel):
 
     citation_id: str
     raw_text: str
-    page: int | None = None
+    page: int | None = Field(default=None, ge=1)
     marker: str | None = None

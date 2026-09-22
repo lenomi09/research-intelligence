@@ -43,12 +43,12 @@ def persist_figure_assets(
             (figures_dir / filename).write_bytes(image_bytes)
             figure.image_path = f"figures/{filename}"
         except OSError as exc:
-            warnings.append(
-                f"figure {figure.figure_id}: failed to write image file: {exc}"
-            )
+            warnings.append(f"figure {figure.figure_id}: failed to write image file: {exc}")
             logger.warning(
                 "stage=assets paper_id=%s figure_id=%s error=%s",
-                paper.paper_id, figure.figure_id, exc,
+                paper.paper_id,
+                figure.figure_id,
+                exc,
             )
 
     return warnings

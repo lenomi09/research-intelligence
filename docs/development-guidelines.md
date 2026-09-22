@@ -38,8 +38,11 @@ deterministically. `src/agent` and `src/tools` stay empty until that need is con
 
 - Target a recent stable Python 3 version (pin exact version in `pyproject.toml` once
   chosen).
-- Follow PEP 8; use a formatter/linter (e.g. `ruff`/`black`, to be added when Phase 1
-  code begins — not installed speculatively in Phase 0).
+- Follow PEP 8; `ruff` is configured (`pyproject.toml` `[tool.ruff]`) for linting
+  (`ruff check .`) and formatting (`ruff format .`) — run both before considering a
+  change done. The configured ruleset is deliberately small (pyflakes, import
+  sorting, bugbear, pyupgrade); it is not a strict/opinionated style enforcer, and
+  should stay that way rather than accumulating rules nobody asked for.
 - Prefer explicit, readable code over clever one-liners.
 - Keep functions small and single-purpose; a function that does I/O and business logic
   in one body is a sign to split it.

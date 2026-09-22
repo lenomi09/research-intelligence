@@ -20,6 +20,7 @@ dependencies = [
 # Local dev/test tooling, not required to run the ingestion pipeline itself.
 dev = [
     "pytest>=8",
+    "ruff>=0.6",
 ]
 
 [build-system]
@@ -32,3 +33,13 @@ packages = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 95
+target-version = "py311"
+
+[tool.ruff.lint]
+# Deliberately small: pyflakes (bugs/unused code), import sorting, and a few
+# common-sense checks — not an aggressive/opinionated ruleset (see
+# docs/development-guidelines.md, "do not over-engineer").
+select = ["E", "F", "I", "B", "UP"]

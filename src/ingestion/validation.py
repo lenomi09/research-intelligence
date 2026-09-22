@@ -25,8 +25,7 @@ def build_report(
     persistence) that aren't part of the domain model itself.
     """
     issues: list[IngestionIssue] = [
-        IngestionIssue(stage="parsing", severity="warning", message=w)
-        for w in parser_warnings
+        IngestionIssue(stage="parsing", severity="warning", message=w) for w in parser_warnings
     ]
     issues.extend(
         IngestionIssue(stage="assets", severity="warning", message=w)
@@ -62,9 +61,7 @@ def build_failure_report(
         paper_id=paper_id,
         source_path=source_path,
         success=False,
-        issues=[
-            IngestionIssue(stage="parsing", severity="error", message=error_message)
-        ],
+        issues=[IngestionIssue(stage="parsing", severity="error", message=error_message)],
     )
 
 

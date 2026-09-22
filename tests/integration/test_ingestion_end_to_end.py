@@ -33,7 +33,9 @@ def test_end_to_end_ingestion_produces_schema_valid_persisted_output(
     metadata = json.loads((paper_dir / "metadata.json").read_text())
     assert metadata["title"] == "A Great Paper About Things"
 
-    pages = [Page.model_validate(p) for p in json.loads((paper_dir / "pages.json").read_text())]
+    pages = [
+        Page.model_validate(p) for p in json.loads((paper_dir / "pages.json").read_text())
+    ]
     assert len(pages) == 3
 
     blocks = [

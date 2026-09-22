@@ -153,7 +153,10 @@ def find_nearby_caption(
         if bbox[3] <= y0 + overlap_tolerance and y0 - bbox[3] <= max_distance
     ]
 
-    for candidates in (sorted(below, key=lambda t: t[1][1]), sorted(above, key=lambda t: -t[1][3])):
+    for candidates in (
+        sorted(below, key=lambda t: t[1][1]),
+        sorted(above, key=lambda t: -t[1][3]),
+    ):
         for text, _ in candidates:
             if matches(text.strip()):
                 return text.strip()
@@ -172,34 +175,46 @@ def is_references_heading(text: str) -> bool:
     return bool(_REFERENCE_HEADING_RE.match(text.strip()))
 
 
-def split_reference_entries(references_text: str) -> list[tuple[str, str | None]]:
-    """Split a references-section blob into ``(raw_text, marker)`` entries.
+def split_reference_entries(
+    lines: list[tuple[str, int]],
+) -> list[tuple[str, str | None, int]]:
+    """Split reference-section lines into ``(raw_text, marker, page)`` entries.
+
+    ``lines`` is ``(line_text, page_number)`` pairs in document order — a references
+    section commonly spans multiple pages, so each entry's ``page`` is taken from its
+    *own* first line rather than assuming the whole section sits on one page
+    (NFR-011: don't attribute evidence to the wrong location).
 
     Best-effort: looks for lines starting with "[N]" or "N." markers and treats each
-    as the start of a new entry. If fewer than 2 entries are found (the heuristic
-    didn't recognize the format), the whole blob is returned as a single entry with
-    no marker, rather than guessing a split that's likely wrong (NFR-006) — callers
-    should treat that case as low-confidence and log a warning.
+    as the start of a new entry. Confidence is judged by whether *any* line matched
+    that pattern — if none did, the whole input is returned as a single low-confidence
+    entry with no marker (NFR-006: don't guess a split that's likely wrong). This is
+    deliberately not "fewer than 2 entries found": a references section with exactly
+    one genuine, correctly marked entry is still a confident split, not a low-confidence
+    one — collapsing it to a bare blob would silently discard a marker we actually
+    detected correctly.
     """
-    lines = [ln for ln in references_text.splitlines() if ln.strip()]
-    if not lines:
+    non_empty = [(text, page) for text, page in lines if text.strip()]
+    if not non_empty:
         return []
 
-    entries: list[list[str]] = []
-    markers: list[str | None] = []
-    for line in lines:
-        match = _REFERENCE_ENTRY_START_RE.match(line)
-        if match:
-            marker = match.group(1) or match.group(2)
-            entries.append([line])
-            markers.append(marker)
-        elif entries:
-            entries[-1].append(line)
+    entries: list[list[tuple[str, int]]] = []
+    for text, page in non_empty:
+        if _REFERENCE_ENTRY_START_RE.match(text) or not entries:
+            entries.append([(text, page)])
         else:
-            entries.append([line])
-            markers.append(None)
+            entries[-1].append((text, page))
 
-    if len(entries) < 2:
-        return [(references_text.strip(), None)]
+    any_marker_found = any(_REFERENCE_ENTRY_START_RE.match(entry[0][0]) for entry in entries)
+    if not any_marker_found:
+        combined = " ".join(text for text, _ in non_empty).strip()
+        return [(combined, None, non_empty[0][1])]
 
-    return [(" ".join(lines).strip(), marker) for lines, marker in zip(entries, markers)]
+    results: list[tuple[str, str | None, int]] = []
+    for entry in entries:
+        raw_text = " ".join(text for text, _ in entry).strip()
+        first_text, first_page = entry[0]
+        match = _REFERENCE_ENTRY_START_RE.match(first_text)
+        marker = (match.group(1) or match.group(2)) if match else None
+        results.append((raw_text, marker, first_page))
+    return results

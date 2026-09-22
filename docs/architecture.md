@@ -248,7 +248,11 @@ since mixing both in one diagram is what made it hard to read.
 
 ### 7.1 Paper Content (Sprint 1 — Ingestion)
 
-What's extracted directly from a PDF, with no interpretation involved:
+What's extracted directly from a PDF, with no interpretation involved. The diagram
+below shows cross-entity *relationships* only; `Page`, `TextBlock`, and `Section` are
+page-level content owned entirely by one `Paper` (no interesting relationship to
+diagram) and are listed in the table beneath it instead — see ADR-014 in
+`decisions.md` for why `Section` was added to Sprint 1's scope.
 
 ```mermaid
 erDiagram
@@ -262,6 +266,9 @@ erDiagram
 |---|---|
 | `Paper` | A single ingested paper: metadata, text, tables, figures, references. |
 | `Author` | A paper author (name; future: affiliation, identifiers). |
+| `Page` | Page-level metadata and extraction health (text length, whether extraction hit a problem) for one page. |
+| `TextBlock` | A contiguous block of body text with page provenance and reading-order index. |
+| `Section` | A heuristically detected section heading (e.g. "Introduction"), with page provenance — best-effort, not guaranteed complete (ADR-014). |
 | `Figure` | An extracted figure/diagram/chart with page provenance. |
 | `Table` | An extracted table with page provenance. |
 | `Citation` | A reference from one paper to another (or to external work) — the edge label `cites` above; modeled as its own entity once graph queries need edge metadata (Sprint 7). |

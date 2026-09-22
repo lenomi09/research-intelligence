@@ -445,6 +445,75 @@ providers.
 
 ---
 
+## ADR-014: Sprint 1 Parser Choice (PyMuPDF) and Domain-Model Adjustments
+
+**Status:** Accepted
+
+**Context:** `implementation-plan.md`'s original Sprint 1 scope named Docling as the
+candidate `DocumentParser` implementation, with PyMuPDF as a fallback "if Docling
+proves difficult to integrate." Docling depends on a full ML-based layout/table model
+stack (torch, transformers, and their own dependency trees), which is a large
+dependency footprint for a sprint whose stated goal is a *reliable ingestion
+pipeline*, not the most accurate possible layout model — and
+`development-guidelines.md`'s Dependency Management rule says to choose the smallest
+reasonable dependency set for the current phase's actual work. Separately, while
+implementing Sprint 1, three small gaps appeared between the previously-documented
+domain model and what the ingestion pipeline actually needed to produce.
+
+**Decision:**
+1. **Parser:** Implement `DocumentParser` with PyMuPDF (`pymupdf`) as the sole Sprint 1
+   parser, not Docling. PyMuPDF is a mature, lightweight library (no ML runtime
+   dependency) that provides everything Sprint 1's scope requires: page-level text
+   with bounding boxes, embedded image extraction, a built-in ruled-table finder
+   (`Page.find_tables`), and PDF metadata access. This is an initial-implementation
+   choice, not a claim that PyMuPDF is categorically better than Docling — Docling
+   (or another parser) remains a live candidate for the swappability validation work
+   in ING-010/backlog, and nothing in the `DocumentParser` interface (defined before
+   this choice was made) had to change to accommodate this decision, which is itself
+   a small positive validation of the interface's design.
+2. **Section as a Sprint 1 entity:** Add `Section` (heuristically detected heading:
+   title, page, order) to Sprint 1's domain models, alongside `Paper`, `Page`,
+   `TextBlock`, `Table`, `Figure`, `Citation`, and `Author`. The original
+   `implementation-plan.md` Sprint 1 model list did not name `Section` explicitly,
+   but FR/scope text always called for "sections where reliably detectable," and
+   deferring a dedicated entity for it would have meant burying heading information
+   as unstructured text inside `TextBlock`, which is unrecoverable later without
+   re-parsing.
+3. **Citation, not "Reference":** The entity introduced in `architecture.md` §7.1 as
+   `Citation` is implemented under that name, even though Sprint 1's brief also uses
+   "Reference" for the same concept informally. Keeping one name avoids two labels for
+   one domain object.
+4. **Output layout — small deviation from the sketch:** The persisted output groups
+   text blocks and sections under `text/` as `blocks.json`/`sections.json` (rather
+   than one file per block), adds a top-level `pages.json` for page-level metadata
+   (`Page` didn't have an obvious home in the originally sketched layout), and stores
+   citations under `references/citations.json`. This is documented in full in
+   `README.md`'s "Ingestion Output Layout" section, per the Sprint 1 brief's
+   instruction to document the final structure rather than force the sketched one.
+
+**Alternatives considered:**
+- Implementing both Docling and PyMuPDF in Sprint 1 to compare — rejected;
+  `development-guidelines.md` and the Sprint 1 brief both say choose one initial
+  implementation and defer a second to the explicit swappability-validation backlog
+  item (ING-010), not build two in parallel from the start.
+- Leaving `Section` out of Sprint 1 and adding it only when Landscape/Understanding
+  (Sprint 3+) need it — rejected; heading locations are cheap to capture during
+  parsing and expensive to reconstruct later from persisted `TextBlock`s alone, and
+  Sprint 1's own scope ("sections where reliably detectable") already implied it.
+
+**Consequences:** `pyproject.toml` gains `pymupdf` and `pydantic` as runtime
+dependencies and `pytest` as a dev dependency — still zero RAG/embedding/vector-store/
+LLM/VLM dependencies, consistent with Sprint 1's scope. A second `DocumentParser`
+implementation (ING-010) remains future work, not done in this sprint. Known,
+documented extraction limitations of the PyMuPDF implementation (vector-drawn figures
+not captured, borderless tables missed, heading/reference-splitting heuristics can
+misfire on unconventional layouts) are recorded in
+`src/infrastructure/parsers/pymupdf_parser.py`'s module docstring and repeated in this
+session's final report — Sprint 1's goal was a *reliable, honestly-reported* pipeline,
+not a claim of high extraction accuracy (see `evaluation.md`).
+
+---
+
 ## Template for Future ADRs
 
 ```

@@ -51,8 +51,17 @@ huggingface/
 .hf_cache/
 
 # --- Generated / local data (do not commit datasets or extracted artifacts) ---
+# Raw scientific paper collections (data/papers/raw/) and all ingestion output
+# (data/papers/processed/, which includes extracted paper text — also not
+# redistributable) are excluded; only the placeholder directories are tracked.
 data/papers/*
 !data/papers/.gitkeep
+!data/papers/raw
+!data/papers/processed
+data/papers/raw/*
+!data/papers/raw/.gitkeep
+data/papers/processed/*
+!data/papers/processed/.gitkeep
 data/figures/*
 !data/figures/.gitkeep
 data/tables/*

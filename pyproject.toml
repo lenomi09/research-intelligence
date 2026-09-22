@@ -7,14 +7,20 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Project maintainer" }]
 
-# Intentionally empty during Phase 0 (planning). Dependencies are added
-# incrementally as each phase actually needs them (see docs/implementation-plan.md
-# and docs/development-guidelines.md — "add a dependency only when it's needed").
-dependencies = []
+# Sprint 1 (Scientific Paper Ingestion) dependencies only — see
+# docs/decisions.md ADR-014 for why each was chosen and docs/development-guidelines.md
+# ("add a dependency only when it's needed") for the policy behind keeping this list
+# minimal. No RAG/embedding/vector-store/LLM/VLM dependencies belong here yet.
+dependencies = [
+    "pymupdf>=1.24",
+    "pydantic>=2",
+]
 
 [project.optional-dependencies]
-# Populated in Phase 1+ (e.g. pytest, ruff) once implementation begins.
-dev = []
+# Local dev/test tooling, not required to run the ingestion pipeline itself.
+dev = [
+    "pytest>=8",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -22,3 +28,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

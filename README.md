@@ -42,12 +42,20 @@ limitations recur, and where the literature is thin.
 
 ## Current Status
 
-Phase 0 — Planning. The full documentation set below has been written; implementation
-has not started. Sprint 1 (defined in
-[docs/implementation-plan.md](docs/implementation-plan.md)) will build a scientific
-paper ingestion pipeline (metadata, text, tables, figures, references, page-level
-evidence) for a small manually curated paper collection — no retrieval, structured
-understanding, comparison, landscape, gap analysis, or agent logic yet.
+**Sprint 1 (Scientific Paper Ingestion) is implemented.** The full documentation set
+below was written in Phase 0; Sprint 1 (defined in
+[docs/implementation-plan.md](docs/implementation-plan.md)) has since built a PDF
+ingestion pipeline — metadata, text, tables, figures, references, and page-level
+evidence, for one PDF at a time, persisted as structured JSON (see "Ingestion Output
+Layout" below). No retrieval, structured understanding, comparison, landscape, gap
+analysis, or agent logic exists yet — see
+[docs/decisions.md](docs/decisions.md) ADR-014 for what changed from the original
+Sprint 1 plan (parser choice, a small domain-model addition) and why.
+
+The pipeline has been validated with unit and integration tests (using PDFs generated
+on the fly with PyMuPDF, not committed fixtures) but **not yet run against a real
+curated AI/CV/ML paper collection** — see "Local Development" below for how to try it
+against your own PDFs.
 
 ## Documentation
 
@@ -130,54 +138,95 @@ research-intelligence-platform/
 ├── docs/                    # Planning and technical documentation
 ├── src/
 │   ├── domain/
-│   │   ├── models/          # Core entities (Paper, Method, Dataset, Metric, ...)
-│   │   ├── schemas/         # Shared validation/serialization schemas
-│   │   └── interfaces/      # Provider-agnostic contracts (LLM, VLM, Embedding, VectorStore, Parser, PaperSource)
-│   ├── ingestion/           # PDF parsing orchestration
-│   ├── retrieval/           # Chunking, embedding, similarity search (supporting capability)
-│   ├── multimodal/          # Figure/table understanding orchestration (supporting capability)
+│   │   ├── models/          # Paper, Author, Page, TextBlock, Section, Figure, Table, Citation (implemented)
+│   │   ├── schemas/         # Shared validation/serialization schemas (not yet needed — see below)
+│   │   └── interfaces/      # DocumentParser (implemented); LLM/VLM/Embedding/VectorStore/PaperSource (future)
+│   ├── ingestion/           # Ingestion orchestration: pipeline, assets, validation, persistence, report (implemented)
+│   ├── infrastructure/
+│   │   └── parsers/         # PyMuPDFDocumentParser + parsing heuristics (implemented)
+│   ├── retrieval/           # Chunking, embedding, similarity search (supporting capability, Sprint 2+)
+│   ├── multimodal/          # Figure/table understanding orchestration (supporting capability, Sprint 8)
 │   ├── agent/                # (future) research workflow orchestration
 │   ├── tools/                 # (future) agent-invocable capabilities
-│   ├── infrastructure/        # Concrete provider implementations
-│   └── api/                   # FastAPI application
+│   └── api/                   # FastAPI application (future)
 │   # discovery/, understanding/, landscape/, comparison/, gap_analysis/, graph/
 │   # are documented in architecture.md and created when their sprint begins —
 │   # not scaffolded ahead of need.
 ├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── evaluation/
+│   ├── unit/                # Domain models, heuristics, pipeline orchestration (fake parser)
+│   ├── integration/         # Real PyMuPDFDocumentParser + real pipeline against generated PDFs
+│   └── evaluation/          # (future — Sprint 6+)
 ├── data/
-│   ├── papers/               # Local sample PDFs (gitignored)
-│   ├── figures/                # Extracted figure images (gitignored)
-│   └── tables/                 # Extracted table data (gitignored)
-├── scripts/                    # Local dev / ingestion entry-point scripts
-├── config/                     # Configuration files
+│   ├── papers/
+│   │   ├── raw/              # Local input PDFs you place here (gitignored)
+│   │   └── processed/         # Ingestion output (gitignored — see "Ingestion Output Layout")
+│   ├── figures/                # (unused by Sprint 1; figures live under papers/processed/<id>/figures/)
+│   └── tables/                 # (unused by Sprint 1; tables live under papers/processed/<id>/tables/)
+├── scripts/
+│   └── ingest.py                # Sprint 1 CLI entry point
+├── config/                       # Configuration files (not yet needed — no config exists yet)
 ├── pyproject.toml
 ├── docker-compose.yml
 └── .gitignore
 ```
 
-Some directories from the platform's original single-document-focused plan
-(`retrieval/`, `multimodal/`, `agent/`, `tools/`) are already scaffolded; they remain
-valid under the revised direction as supporting/future capabilities (see
-[docs/decisions.md](docs/decisions.md)). No source files have been added to any
-directory yet — only `.gitkeep` placeholders — per the Phase 0 constraint of
-documentation/scaffolding only.
+`src/domain/schemas` and `config/` remain empty (`.gitkeep` only) — Sprint 1 didn't
+need them (see [docs/development-guidelines.md](docs/development-guidelines.md), "do
+not over-engineer"). `retrieval/`, `multimodal/`, `agent/`, `tools/`, and `api/` are
+scaffolded but still empty, reserved for their documented future sprints.
 
 ## Local Development
 
-Not yet applicable — no runnable code exists. Once Sprint 1 begins:
+Sprint 1's ingestion pipeline is runnable locally. No API keys or `.env` file are
+needed yet — nothing in Sprint 1 calls an external service.
 
-1. Python 3.11+ will be required (see `pyproject.toml`).
-2. Dependencies will be added incrementally per sprint (not pre-installed speculatively —
-   see [docs/development-guidelines.md](docs/development-guidelines.md)).
-3. `docker-compose.yml` currently documents planned local services (Qdrant, PostgreSQL)
-   as comments; it will be filled in when those services are actually needed (Sprint 2).
-4. Secrets/config will be supplied via a local `.env` file (never committed); an
-   `.env.example` will be added once real configuration variables exist.
+```bash
+python -m venv .venv
+.venv/Scripts/activate       # Windows; use `source .venv/bin/activate` on macOS/Linux
+pip install -e ".[dev]"
 
-This section will be updated as soon as there's something runnable.
+# Run the test suite (uses synthetically generated PDFs, no real papers needed):
+pytest
+
+# Ingest your own PDFs:
+#   1. Place a few open-access PDFs (e.g. from arXiv — respect each paper's license/
+#      terms) into data/papers/raw/ (gitignored, nothing there is committed).
+#   2. Run:
+python scripts/ingest.py
+#   Output is written to data/papers/processed/<paper_id>/ (also gitignored — see
+#   "Ingestion Output Layout" below) and a per-run summary prints to the console.
+```
+
+`docker-compose.yml` currently documents planned local services (Qdrant, PostgreSQL)
+as comments; it will be filled in when those services are actually needed (Sprint 2).
+
+## Ingestion Output Layout
+
+Running `scripts/ingest.py` writes one directory per paper under
+`data/papers/processed/` (structure as actually implemented — see
+[docs/decisions.md](docs/decisions.md) ADR-014 for how/why this differs slightly from
+the layout originally sketched for Sprint 1):
+
+```
+data/papers/processed/<paper_id>/
+├── manifest.json          # IngestionReport (counts, warnings/errors) + file index
+├── metadata.json          # title, authors, abstract, page_count, metadata_source
+├── pages.json             # per-page text length / extraction-issue flags
+├── text/
+│   ├── blocks.json        # TextBlock[] — body text with page + reading-order provenance
+│   └── sections.json      # Section[] — heuristically detected headings
+├── figures/
+│   ├── figures.json       # Figure[] — page, caption (if found), image_path, bbox
+│   └── <figure_id>.<ext>  # the extracted image files themselves
+├── tables/
+│   └── tables.json        # Table[] — page, caption (if found), extracted rows
+└── references/
+    └── citations.json     # Citation[] — raw reference text, page, marker (if detected)
+```
+
+Neither `data/papers/raw/` nor `data/papers/processed/` are committed — raw papers may
+be copyrighted, and processed output includes extracted paper text, which is a
+redistribution of that same content in another form (see `.gitignore`).
 
 ## Contributing
 

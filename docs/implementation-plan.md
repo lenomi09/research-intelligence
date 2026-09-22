@@ -42,7 +42,7 @@ deliberately last — see the sequencing ADR in `decisions.md`.
 - **Risks:** Over-planning / analysis paralysis. Mitigated by keeping Sprint 1 narrow and
   time-boxed.
 
-### Sprint 1 — Scientific Paper Ingestion
+### Sprint 1 — Scientific Paper Ingestion — **Implemented** (see status note below)
 
 - **Objective:** Reliably turn a small collection of scientific PDFs into structured,
   provenance-tagged content: text, tables, figures, references, and page metadata.
@@ -57,6 +57,12 @@ deliberately last — see the sequencing ADR in `decisions.md`.
   inconsistent reference formatting. Parser choice may need revisiting after real
   testing (kept swappable per NFR-009).
 - **Full detail:** see "Sprint 1 (Detailed)" below.
+- **Status note:** implemented with PyMuPDF as the parser (not Docling — see
+  `decisions.md` ADR-014 for why), validated with unit/integration tests using
+  synthetically generated PDFs. It has **not** been run against a real curated
+  AI/CV/ML corpus (none was available in this environment) — see this sprint's final
+  report for what that means for the Definition of Done above and for
+  `README.md`'s instructions on adding real test papers locally.
 
 ### Sprint 2 — Paper Discovery and Retrieval
 
@@ -174,11 +180,25 @@ deliberately last — see the sequencing ADR in `decisions.md`.
 
 ---
 
-## Sprint 1 (Detailed)
+## Sprint 1 (Detailed) — Implemented
 
 **Sprint goal:** Build a reliable scientific paper ingestion pipeline that extracts
 metadata, text, tables, figures, citations/references, and page-level evidence from a
 small paper collection.
+
+**As implemented:** `src/domain/models` (Paper, Author, Page, TextBlock, Section,
+Figure, Table, Citation — pydantic models), `src/domain/interfaces/document_parser.py`
+(the `DocumentParser` interface + `ParsingError`/`InvalidDocumentError`),
+`src/infrastructure/parsers/pymupdf_parser.py` (the PyMuPDF implementation, plus
+`heuristics.py` for the pure title/heading/caption/reference-splitting logic),
+`src/ingestion/` (`pipeline.py` orchestration, `assets.py` figure persistence,
+`validation.py` report-building + cross-entity page-range checks, `persistence.py`
+JSON output, `report.py` the `IngestionReport` model), and `scripts/ingest.py` as the
+CLI entry point. 42 unit + integration tests in `tests/unit` and `tests/integration`
+(the latter using PDFs generated on the fly with PyMuPDF, not committed binary
+fixtures). See this sprint's final report (delivered in-conversation) for the full
+file list, dependency list, and known limitations, and `README.md`'s "Ingestion
+Output Layout" section for the persisted directory structure as actually built.
 
 **Explicitly not in Sprint 1:** full RAG, conversational chatbot, autonomous agent,
 research gap analysis, research graph, production-scale paper crawling, complete
@@ -259,3 +279,9 @@ structured scientific paper data for every later Research Intelligence capabilit
   Retrieval and Multimodal as supporting capabilities; moved the agentic layer to a
   future phase after all deterministic pipelines; added reference/citation extraction to
   Sprint 1 scope (FR-011) to support the future Research Graph.
+- 2026-09-22: Sprint 1 implemented — PyMuPDF chosen as the parser instead of Docling,
+  `Section` added to the Sprint 1 domain model set (see `decisions.md` ADR-014 for
+  both). No real curated paper corpus was ingested in this environment; the pipeline
+  was validated with unit/integration tests against synthetically generated PDFs
+  only — see the Sprint 1 final report for what remains before the corpus-level
+  Definition of Done items can be checked off with real papers.

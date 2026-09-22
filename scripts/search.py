@@ -54,8 +54,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     store = QdrantLocalVectorStore(storage_path=args.index_dir, dimension=embedder.dimension)
-    pipeline = RetrievalPipeline(embedding_provider=embedder, vector_store=store)
-    results = pipeline.retrieve(args.question, top_k=args.top_k, paper_ids=args.paper or None)
+    try:
+        pipeline = RetrievalPipeline(embedding_provider=embedder, vector_store=store)
+        results = pipeline.retrieve(
+            args.question, top_k=args.top_k, paper_ids=args.paper or None
+        )
+    finally:
+        # Explicit close rather than relying on QdrantClient.__del__ — on Windows,
+        # __del__ running during interpreter shutdown can hit a torn-down msvcrt
+        # module and print a spurious traceback even though nothing went wrong.
+        store.close()
 
     if not results:
         print(

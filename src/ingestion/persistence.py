@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from src.domain.models.paper import Paper
 from src.ingestion.report import IngestionReport
 
@@ -95,6 +97,20 @@ def load_paper(paper_dir: Path) -> Paper:
     unparseable, that field degrades to an empty list and a warning is appended to
     the returned ``Paper.warnings`` instead of raising (NFR-006) — none of those
     fields affect the text this sprint actually retrieves.
+
+    Raises ``PaperLoadError`` — never a raw ``KeyError``/``ValidationError`` — for
+    *any* way this paper turns out to be unusable, including a required file that is
+    syntactically valid JSON but structurally wrong (e.g. missing ``paper_id``, or a
+    ``text_blocks`` entry that doesn't match ``TextBlock``'s shape). Callers (e.g.
+    ``LocalCollectionPaperSource.list_papers``) catch only ``PaperLoadError`` to skip
+    one bad paper directory without aborting the whole batch — a raw exception type
+    here would propagate past that catch and take down every other paper's discovery
+    too, which is exactly the single-bad-file-crashes-everything failure NFR-006
+    exists to prevent. One accepted simplification: a *structurally* wrong optional
+    field (valid JSON, wrong shape — as opposed to missing/corrupt, which already
+    degrades per-field) fails the whole paper rather than just that field, since it
+    can only be distinguished from a genuine schema mismatch once ``Paper()`` itself
+    validates it below.
     """
     metadata = _read_required_json(paper_dir / "metadata.json", paper_dir)
     text_blocks = _read_required_json(paper_dir / "text" / "blocks.json", paper_dir)
@@ -108,22 +124,27 @@ def load_paper(paper_dir: Path) -> Paper:
         paper_dir / "references" / "citations.json", warnings, "citations"
     )
 
-    return Paper(
-        paper_id=metadata["paper_id"],
-        source_path=metadata["source_path"],
-        title=metadata.get("title"),
-        authors=metadata.get("authors", []),
-        abstract=metadata.get("abstract"),
-        page_count=metadata.get("page_count", 0),
-        metadata_source=metadata.get("metadata_source", "unavailable"),
-        pages=pages,
-        text_blocks=text_blocks,
-        sections=sections,
-        figures=figures,
-        tables=tables,
-        citations=citations,
-        warnings=warnings,
-    )
+    try:
+        return Paper(
+            paper_id=metadata["paper_id"],
+            source_path=metadata["source_path"],
+            title=metadata.get("title"),
+            authors=metadata.get("authors", []),
+            abstract=metadata.get("abstract"),
+            page_count=metadata.get("page_count", 0),
+            metadata_source=metadata.get("metadata_source", "unavailable"),
+            pages=pages,
+            text_blocks=text_blocks,
+            sections=sections,
+            figures=figures,
+            tables=tables,
+            citations=citations,
+            warnings=warnings,
+        )
+    except (KeyError, TypeError, ValidationError) as exc:
+        raise PaperLoadError(
+            f"'{paper_dir}': metadata.json or a persisted field has an unexpected shape: {exc}"
+        ) from exc
 
 
 def _read_required_json(path: Path, paper_dir: Path) -> object:

@@ -89,7 +89,9 @@ class QdrantLocalVectorStore(VectorStore):
         self, vector: Vector, top_k: int = 5, paper_ids: list[str] | None = None
     ) -> list[ScoredChunk]:
         query_filter = None
-        if paper_ids:
+        if paper_ids is not None:
+            # An explicit empty list must restrict to zero papers, not fall through
+            # to an unfiltered search — MatchAny(any=[]) correctly matches nothing.
             query_filter = qmodels.Filter(
                 must=[
                     qmodels.FieldCondition(

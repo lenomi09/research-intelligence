@@ -12,9 +12,14 @@ into structured, evidence-backed research intelligence (per-paper structured
 knowledge, multi-paper comparison, research landscape, gap hypotheses), not a
 single-document "chat with PDF" tool. Full product context: `docs/PRD.md`.
 
-**Current state:** Sprint 1 (Scientific Paper Ingestion) is implemented. PDF → text
-blocks, sections, figures, tables, citations, page metadata → persisted JSON. Nothing
-past ingestion exists yet — see `docs/implementation-plan.md` for the roadmap and
+**Current state:** Sprints 1 and 2 are implemented. Sprint 1 (Scientific Paper
+Ingestion): PDF → text blocks, sections, figures, tables, citations, page metadata →
+persisted JSON (`scripts/ingest.py`). Sprint 2 (Discovery and Retrieval): reads that
+persisted output back (`src/discovery`, `LocalCollectionPaperSource`), chunks and
+embeds it (`fastembed`), indexes it in a local vector store (`qdrant-client`
+embedded mode), and answers a question with ranked, cited evidence chunks —
+no LLM involved (`scripts/index.py`, `scripts/search.py`; see ADR-015). Nothing past
+retrieval exists yet — see `docs/implementation-plan.md` for the roadmap and
 `docs/product-backlog.md` for itemized scope.
 
 ## 2. Architectural Principles (non-negotiable)
@@ -58,10 +63,12 @@ from code alone when a doc exists.
 ## 4. Technology Stack
 
 Runtime deps are added **only when a sprint needs them** — see `pyproject.toml` for
-what's actually installed (currently: `pymupdf`, `pydantic`; dev: `pytest`). Do not
-add RAG/embedding/vector-store/LLM/VLM libraries until the sprint that needs them
-(see `docs/implementation-plan.md`). Candidate technologies for future sprints are
-listed in `docs/architecture.md` §8 — "candidate" means not yet chosen, not "assumed."
+what's actually installed (currently: `pymupdf`, `pydantic`, `fastembed`,
+`qdrant-client`; dev: `pytest`, `ruff`). Do not add LLM/VLM libraries until the
+sprint that needs them (Sprint 3+, see `docs/implementation-plan.md`). Candidate
+technologies not yet chosen are listed in `docs/architecture.md` §8 — "candidate"
+means not yet chosen, not "assumed"; ADR-014/ADR-015 record what was actually picked
+and why.
 
 ## 5. Source Organization
 
@@ -76,10 +83,10 @@ scripts/                                 # composition roots (CLI entry points) 
                                           # capability module
 ```
 
-Capability directories for future sprints (`discovery/`, `understanding/`,
-`landscape/`, `comparison/`, `gap_analysis/`, `graph/`) are documented in
-`docs/architecture.md` §3 but **do not exist yet** — create one only when its sprint
-starts, not ahead of need.
+`discovery/` and `retrieval/` exist (Sprint 2). Capability directories for later
+sprints (`understanding/`, `landscape/`, `comparison/`, `gap_analysis/`, `graph/`)
+are documented in `docs/architecture.md` §3 but **do not exist yet** — create one
+only when its sprint starts, not ahead of need.
 
 ## 6. Domain / Infrastructure Boundary
 
@@ -150,7 +157,10 @@ CI; check `pyproject.toml` before claiming otherwise.
 - `tests/integration/`: real implementations against real (or synthetically
   generated, via PyMuPDF itself — see `tests/integration/conftest.py`) PDFs. Never
   commit binary PDF fixtures; generate them in a fixture instead.
-- `tests/evaluation/`: not used yet (Sprint 6+).
+- `tests/evaluation/`: a real Recall@K/MRR harness exists (Sprint 2, RET-008)
+  against a small synthetic corpus — clearly labeled as such, not a validated
+  measurement against real papers. Formal benchmark-dataset infrastructure is still
+  Sprint 6+.
 - Run with `pytest` (repo root; `pyproject.toml` sets `pythonpath = ["."]`).
 - Every new capability needs both a unit test path (fake collaborators) and, where
   it touches a real library, an integration test.

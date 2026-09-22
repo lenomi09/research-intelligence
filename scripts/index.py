@@ -64,12 +64,18 @@ def main(argv: list[str] | None = None) -> int:
 
     args.index_dir.mkdir(parents=True, exist_ok=True)
     store = QdrantLocalVectorStore(storage_path=args.index_dir, dimension=embedder.dimension)
-    source = LocalCollectionPaperSource(processed_root=args.processed_dir)
-    pipeline = IndexingPipeline(
-        paper_source=source, embedding_provider=embedder, vector_store=store
-    )
+    try:
+        source = LocalCollectionPaperSource(processed_root=args.processed_dir)
+        pipeline = IndexingPipeline(
+            paper_source=source, embedding_provider=embedder, vector_store=store
+        )
+        report = pipeline.index_all()
+    finally:
+        # Explicit close rather than relying on QdrantClient.__del__ — on Windows,
+        # __del__ running during interpreter shutdown can hit a torn-down msvcrt
+        # module and print a spurious traceback even though nothing went wrong.
+        store.close()
 
-    report = pipeline.index_all()
     print(f"Indexed {report.papers_indexed} papers, {report.chunks_indexed} chunks.")
     return 0
 

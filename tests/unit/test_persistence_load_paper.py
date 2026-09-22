@@ -105,3 +105,34 @@ def test_corrupt_figures_json_degrades_to_empty_with_warning(tmp_path: Path) -> 
 def test_missing_paper_directory_raises_paper_load_error(tmp_path: Path) -> None:
     with pytest.raises(PaperLoadError):
         load_paper(tmp_path / "does_not_exist")
+
+
+def test_metadata_json_missing_required_key_raises_paper_load_error_not_key_error(
+    tmp_path: Path,
+) -> None:
+    """Regression test: valid JSON that's missing a required key (e.g. hand-edited
+    or from an older schema) must raise PaperLoadError, not a raw KeyError — a raw
+    exception here would propagate past LocalCollectionPaperSource's
+    `except PaperLoadError` and crash discovery for every other paper too."""
+    paper = _full_paper()
+    paper_dir = persist_paper(paper, _report_for(paper), tmp_path)
+    (paper_dir / "metadata.json").write_text('{"title": "Missing paper_id"}', encoding="utf-8")
+
+    with pytest.raises(PaperLoadError):
+        load_paper(paper_dir)
+
+
+def test_blocks_json_with_wrong_shape_raises_paper_load_error_not_validation_error(
+    tmp_path: Path,
+) -> None:
+    """Regression test: syntactically valid JSON that doesn't match TextBlock's
+    shape (e.g. missing 'page') must raise PaperLoadError, not a raw
+    pydantic ValidationError."""
+    paper = _full_paper()
+    paper_dir = persist_paper(paper, _report_for(paper), tmp_path)
+    (paper_dir / "text" / "blocks.json").write_text(
+        '[{"block_id": "block_0001", "text": "no page field"}]', encoding="utf-8"
+    )
+
+    with pytest.raises(PaperLoadError):
+        load_paper(paper_dir)

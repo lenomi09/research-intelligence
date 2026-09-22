@@ -1,12 +1,16 @@
 # Architecture
 
-**Status:** Phase 0 — Planning (conceptual design, not yet implemented)
+**Status:** Sprints 1–2 implemented (Ingestion, Discovery/Retrieval); everything past
+that is still conceptual design — see `implementation-plan.md` for what's actually
+built vs. planned per sprint.
 **Last updated:** 2026-09-22
 
 This document describes the intended architecture of the Research Intelligence
-Platform. It is a design document, not a record of what exists yet — as of Phase 0, no
-application code has been written. Technology names below are **initial candidates**,
-not final commitments (see `decisions.md`).
+Platform. Most of it is still a design document, not a record of what exists — only
+the components marked implemented in §3 have real code behind them. §8's interface
+table lists every candidate implementation without marking which was actually
+picked; that decision (and why) lives in `decisions.md`'s ADRs (ADR-014 for
+`DocumentParser`, ADR-015 for `EmbeddingProvider`/`VectorStore`), not here.
 
 ## 0. Positioning: What This Architecture Is For
 

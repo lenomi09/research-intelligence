@@ -93,3 +93,17 @@ def test_upsert_empty_list_is_a_no_op(tmp_path: Path) -> None:
     store.upsert([])
     assert store.query([1, 0, 0, 0], top_k=5) == []
     store.close()
+
+
+def test_empty_paper_ids_list_restricts_to_zero_papers_not_unfiltered(
+    tmp_path: Path,
+) -> None:
+    """Regression test: an explicit empty paper_ids list must not silently fall
+    back to an unfiltered search — it should restrict to nothing, distinct from
+    paper_ids=None (no restriction)."""
+    store = QdrantLocalVectorStore(storage_path=tmp_path, dimension=DIM)
+    store.upsert(_records())
+
+    assert store.query([1, 0, 0, 0], top_k=5, paper_ids=[]) == []
+    assert len(store.query([1, 0, 0, 0], top_k=5, paper_ids=None)) == 2
+    store.close()

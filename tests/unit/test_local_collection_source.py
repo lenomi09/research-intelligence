@@ -75,3 +75,23 @@ def test_list_papers_ignores_non_directory_entries(tmp_path: Path) -> None:
     papers = source.list_papers()
 
     assert {p.paper_id for p in papers} == {"paper_001"}
+
+
+def test_one_malformed_paper_does_not_crash_the_whole_batch(tmp_path: Path) -> None:
+    """Regression test: a paper directory with syntactically valid but structurally
+    wrong JSON (e.g. metadata.json missing 'paper_id') must be skipped, not crash
+    list_papers() for every other paper in the collection (NFR-006)."""
+    _write_minimal_paper_dir(tmp_path, "paper_good_1")
+    _write_minimal_paper_dir(tmp_path, "paper_good_2")
+
+    malformed_dir = tmp_path / "paper_malformed"
+    (malformed_dir / "text").mkdir(parents=True)
+    (malformed_dir / "metadata.json").write_text(
+        json.dumps({"title": "No paper_id key at all"}), encoding="utf-8"
+    )
+    (malformed_dir / "text" / "blocks.json").write_text("[]", encoding="utf-8")
+
+    source = LocalCollectionPaperSource(processed_root=tmp_path)
+    papers = source.list_papers()
+
+    assert {p.paper_id for p in papers} == {"paper_good_1", "paper_good_2"}
